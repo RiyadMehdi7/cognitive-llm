@@ -56,8 +56,8 @@ class HomeostaticNorm(nn.Module):
             with torch.no_grad():
                 batch_mean = x.detach().mean(dim=[0, 1])
                 batch_var = x.detach().var(dim=[0, 1])
-                self.running_mean = self.tau * self.running_mean + (1 - self.tau) * batch_mean
-                self.running_var = self.tau * self.running_var + (1 - self.tau) * batch_var
+                self.running_mean.mul_(self.tau).add_(batch_mean, alpha=1 - self.tau)
+                self.running_var.mul_(self.tau).add_(batch_var, alpha=1 - self.tau)
                 self.step_count += 1
 
         # Homeostatic correction factor

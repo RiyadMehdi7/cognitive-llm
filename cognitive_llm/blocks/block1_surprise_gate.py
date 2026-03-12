@@ -62,7 +62,7 @@ class SurpriseGate(nn.Module):
         # Update EMA prior
         with torch.no_grad():
             current_mean = x.mean(dim=[0, 1], keepdim=False).unsqueeze(0)
-            self.ema_hidden = self.ema_decay * self.ema_hidden + (1 - self.ema_decay) * current_mean
+            self.ema_hidden.mul_(self.ema_decay).add_(current_mean, alpha=1 - self.ema_decay)
 
         # Compute surprise: norm of difference between x and prior prediction
         expected = self.prior(self.ema_hidden).unsqueeze(1).expand_as(x)
