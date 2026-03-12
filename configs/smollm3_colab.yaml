@@ -1,0 +1,33 @@
+model_id: HuggingFaceTB/SmolLM3-3B
+quantization: 4bit           # Required for T4 16GB
+
+# Block flags — start with B1+B6 only
+use_block1: true             # Surprise gate ON
+use_block2: false            # Memory OFF (debug block1 first)
+use_block3: false
+use_block4: false
+use_block5: false
+use_block6: true             # HomeostaticNorm always ON with any block
+
+training:
+  batch_size: 2
+  gradient_accumulation: 8   # Effective batch = 16
+  learning_rate: 2e-4
+  warmup_steps: 100
+  max_steps: 500             # Just enough to verify loss decreases
+  max_seq_len: 512
+  fp16: false
+  bf16: true
+  gradient_checkpointing: true
+  max_grad_norm: 1.0
+  save_every_n_steps: 500
+  eval_every_n_steps: 100
+  checkpoint_dir: ./checkpoints
+  use_wandb: true
+
+dataset: gsm8k               # Start with GSM8K only
+
+lambda_config:
+  surprise: 0.01
+  critic: 0.1
+  predictive: 0.05

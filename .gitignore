@@ -1,0 +1,41 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+.pytest_cache/
+.tox/
+.venv/
+venv/
+env/
+*.env
+
+# Checkpoints & results
+checkpoints/
+results/
+ablation_results/
+wandb/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model weights (too large for git)
+*.bin
+*.safetensors
+*.gguf
