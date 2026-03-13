@@ -7,7 +7,7 @@ from cognitive_llm.blocks.block2_episodic_memory import EpisodicMemory
 
 @pytest.fixture
 def memory():
-    return EpisodicMemory(d_model=128, mem_slots=32, n_heads=4)
+    return EpisodicMemory(d_model=128, mem_slots=32, bottleneck_dim=32)
 
 
 @pytest.fixture
@@ -68,11 +68,14 @@ class TestEpisodicMemory:
         assert sample_input.grad is not None
 
     def test_read_near_identity_at_init(self, memory, sample_input):
-        """At initialization, read() should approximately pass through the query."""
+        """At initialization, read() should approximately pass through the query.
+
+        mem_proj is zero-initialized, so gate * proj(mem) = 0 regardless of
+        gate value, meaning read output = query + 0 = query.
+        """
         memory.reset(2, torch.device("cpu"))
         memory.write(sample_input)
         out = memory.read(sample_input)
-        # combine is initialized as identity on query half, zero on memory half
         assert torch.allclose(out, sample_input, atol=1e-5)
 
     def test_write_gate_starts_conservative(self):
@@ -92,3 +95,12 @@ class TestEpisodicMemory:
         memory.write(sample_input * 2)
         # Memory should change after second write
         assert not torch.allclose(memory.memory_values, state1)
+
+    def test_param_count_is_low_rank(self):
+        """B2 with d_model=2048 should have ~5M params, not 25M."""
+        mem = EpisodicMemory(d_model=2048, mem_slots=64, bottleneck_dim=128)
+        total = sum(p.numel() for p in mem.parameters())
+        # Should be well under 10M (old was 25M)
+        assert total < 10_000_000
+        # Should be around 5M
+        assert total > 1_000_000
