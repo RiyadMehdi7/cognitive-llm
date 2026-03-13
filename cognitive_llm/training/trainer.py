@@ -125,6 +125,8 @@ class CognitiveTrainer:
             )
 
         accum_loss = 0.0
+        accum_lm_loss = 0.0
+        accum_surprise_loss = 0.0
         data_iter = iter(self.train_dataloader)
 
         for step in range(1, self.max_steps + 1):
@@ -155,6 +157,9 @@ class CognitiveTrainer:
             loss = loss / self.grad_accum
             loss.backward()
             accum_loss += loss.item()
+            accum_lm_loss += outputs["lm_loss"].item() / self.grad_accum
+            if outputs["surprise_loss"] is not None:
+                accum_surprise_loss += outputs["surprise_loss"].item() / self.grad_accum
 
             # Gradient accumulation step
             if step % self.grad_accum == 0:
@@ -167,17 +172,20 @@ class CognitiveTrainer:
 
                 self.global_step += 1
                 step_loss = accum_loss
+                step_lm_loss = accum_lm_loss
+                step_surprise_loss = accum_surprise_loss
                 accum_loss = 0.0
+                accum_lm_loss = 0.0
+                accum_surprise_loss = 0.0
                 self.train_losses.append(step_loss)
 
                 # Logging
                 log_dict = {
                     "train/total_loss": step_loss,
-                    "train/lm_loss": outputs["lm_loss"].item(),
+                    "train/lm_loss": step_lm_loss,
+                    "train/surprise_loss": step_surprise_loss,
                     "train/lr": self.scheduler.get_last_lr()[0],
                 }
-                if outputs["surprise_loss"] is not None:
-                    log_dict["train/surprise_loss"] = outputs["surprise_loss"].item()
 
                 if self.use_wandb:
                     wandb.log(log_dict, step=self.global_step)
@@ -185,7 +193,7 @@ class CognitiveTrainer:
                 if self.global_step % 10 == 0:
                     print(
                         f"Step {self.global_step}: loss={step_loss:.4f} "
-                        f"lm_loss={outputs['lm_loss'].item():.4f}"
+                        f"lm_loss={step_lm_loss:.4f}"
                     )
 
             # Run assessment
