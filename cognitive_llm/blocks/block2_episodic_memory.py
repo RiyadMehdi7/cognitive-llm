@@ -34,8 +34,12 @@ class EpisodicMemory(nn.Module):
         self.memory_keys = nn.Parameter(torch.randn(mem_slots, d_model) * 0.02)
 
         # Write gate: decides how much to write
+        # Initialize bias to -2 so sigmoid starts near 0.12 (conservative writes)
+        write_linear = nn.Linear(d_model, 1)
+        nn.init.zeros_(write_linear.weight)
+        nn.init.constant_(write_linear.bias, -2.0)
         self.write_gate = nn.Sequential(
-            nn.Linear(d_model, 1),
+            write_linear,
             nn.Sigmoid(),
         )
 
@@ -43,7 +47,15 @@ class EpisodicMemory(nn.Module):
         self.read_attn = nn.MultiheadAttention(d_model, n_heads, batch_first=True)
 
         # Combine read output with current hidden
+        # Initialize near-identity: pass through query, ignore memory at start.
+        # This prevents the randomly-initialized combine layer from producing
+        # wildly different hidden states and spiking the initial loss.
         self.combine = nn.Linear(d_model * 2, d_model)
+        with torch.no_grad():
+            # First half (query passthrough) ≈ identity, second half (memory) ≈ 0
+            self.combine.weight.zero_()
+            self.combine.weight[:, :d_model].copy_(torch.eye(d_model))
+            self.combine.bias.zero_()
 
         # Memory values buffer (set during reset)
         self.memory_values: torch.Tensor | None = None

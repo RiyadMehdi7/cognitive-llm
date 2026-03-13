@@ -67,6 +67,23 @@ class TestEpisodicMemory:
         loss.backward()
         assert sample_input.grad is not None
 
+    def test_read_near_identity_at_init(self, memory, sample_input):
+        """At initialization, read() should approximately pass through the query."""
+        memory.reset(2, torch.device("cpu"))
+        memory.write(sample_input)
+        out = memory.read(sample_input)
+        # combine is initialized as identity on query half, zero on memory half
+        assert torch.allclose(out, sample_input, atol=1e-5)
+
+    def test_write_gate_starts_conservative(self):
+        """Write gate should start with low values (sigmoid(-2) ≈ 0.12)."""
+        mem = EpisodicMemory(d_model=128, mem_slots=32)
+        x = torch.randn(2, 16, 128)
+        gate_layer = mem.write_gate
+        gate_vals = gate_layer(x)
+        # sigmoid(-2) ≈ 0.119, should be well below 0.5
+        assert gate_vals.mean().item() < 0.2
+
     def test_multiple_writes(self, memory, sample_input):
         """Multiple writes should accumulate in memory."""
         memory.reset(2, torch.device("cpu"))
