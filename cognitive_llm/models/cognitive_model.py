@@ -85,13 +85,22 @@ class CognitiveModel(nn.Module):
             setattr(parent, attr, HomeostaticNorm(d_model))
 
     def _get_model_backbone(self) -> nn.Module:
-        """Get the transformer backbone (handles different model architectures)."""
-        # SmolLM3, LLaMA, OLMo all use .model
-        if hasattr(self.base, "model"):
-            return self.base.model
-        # Fallback for GPT-style models
-        if hasattr(self.base, "transformer"):
-            return self.base.transformer
+        """Get the transformer backbone (handles PEFT wrappers and different architectures).
+
+        Walks down .model attributes until finding a module with embed_tokens or wte,
+        which indicates the actual transformer backbone (e.g. LlamaModel).
+        """
+        module = self.base
+        # Walk through PEFT / wrapper layers until we find the backbone
+        for _ in range(5):  # safety limit
+            if hasattr(module, "embed_tokens") or hasattr(module, "wte"):
+                return module
+            if hasattr(module, "model"):
+                module = module.model
+            elif hasattr(module, "transformer"):
+                return module.transformer
+            else:
+                break
         raise AttributeError("Cannot find transformer backbone in base model")
 
     def _get_embed_tokens(self) -> nn.Module:
@@ -122,10 +131,50 @@ class CognitiveModel(nn.Module):
         raise AttributeError("Cannot find final norm in base model")
 
     def _get_lm_head(self) -> nn.Module:
-        """Get the language model head."""
-        if hasattr(self.base, "lm_head"):
-            return self.base.lm_head
+        """Get the language model head (handles PEFT wrappers)."""
+        module = self.base
+        for _ in range(5):
+            if hasattr(module, "lm_head"):
+                return module.lm_head
+            if hasattr(module, "model"):
+                module = module.model
+            else:
+                break
         raise AttributeError("Cannot find lm_head in base model")
+
+    def _move_blocks_to_match(self, hidden: torch.Tensor) -> None:
+        """Move cognitive blocks to the hidden-state device once.
+
+        Keep cognitive block parameters in their native dtype for stability on
+        4-bit / fp16 debug runs. The blocks cast activations internally when
+        needed, which avoids training them directly in low precision.
+        """
+        if hasattr(self, "_blocks_moved"):
+            return
+
+        target_device = hidden.device
+        if self.surprise_gate is not None:
+            self.surprise_gate = self.surprise_gate.to(device=target_device)
+        if self.episodic_mem is not None:
+            self.episodic_mem = self.episodic_mem.to(device=target_device)
+        for i, c in enumerate(self.critics):
+            if c is not None:
+                self.critics[i] = c.to(device=target_device)
+        for i, p in enumerate(self.pred_coding):
+            if p is not None:
+                self.pred_coding[i] = p.to(device=target_device)
+        if self.gating_policy is not None:
+            self.gating_policy = self.gating_policy.to(device=target_device)
+        self._blocks_moved = True
+
+    def _can_use_base_forward(self) -> bool:
+        """Use the base model path when no inter-layer cognitive blocks are active."""
+        return (
+            self.episodic_mem is None
+            and self.gating_policy is None
+            and all(c is None for c in self.critics)
+            and all(p is None for p in self.pred_coding)
+        )
 
     def forward(
         self,
@@ -149,22 +198,7 @@ class CognitiveModel(nn.Module):
         hidden = self._get_embed_tokens()(input_ids)
 
         # Step 0: Lazily move cognitive blocks to match hidden device & dtype (once)
-        if not hasattr(self, '_blocks_moved'):
-            target_device = hidden.device
-            target_dtype = hidden.dtype
-            if self.surprise_gate is not None:
-                self.surprise_gate = self.surprise_gate.to(device=target_device, dtype=target_dtype)
-            if self.episodic_mem is not None:
-                self.episodic_mem = self.episodic_mem.to(device=target_device, dtype=target_dtype)
-            for i, c in enumerate(self.critics):
-                if c is not None:
-                    self.critics[i] = c.to(device=target_device, dtype=target_dtype)
-            for i, p in enumerate(self.pred_coding):
-                if p is not None:
-                    self.pred_coding[i] = p.to(device=target_device, dtype=target_dtype)
-            if self.gating_policy is not None:
-                self.gating_policy = self.gating_policy.to(device=target_device, dtype=target_dtype)
-            self._blocks_moved = True
+        self._move_blocks_to_match(hidden)
 
         # Step 2: Block 1 — Surprise gate
         depth_signal = None
@@ -172,6 +206,26 @@ class CognitiveModel(nn.Module):
         if self.surprise_gate is not None:
             hidden, depth_signal = self.surprise_gate(hidden)
             surprise_loss = self.surprise_gate.get_surprise_loss(hidden)
+
+        # Delegate to the base model whenever possible. This keeps architecture-
+        # specific details like position embeddings and cache handling inside
+        # Hugging Face's forward path, which is required for Llama-family models.
+        if self._can_use_base_forward():
+            base_out = self.base(
+                inputs_embeds=hidden,
+                attention_mask=attention_mask,
+                labels=labels,
+                return_dict=True,
+            )
+            return {
+                "logits": base_out.logits,
+                "lm_loss": base_out.loss,
+                "surprise_loss": surprise_loss,
+                "critic_losses": [],
+                "pred_losses": [],
+                "gating_actions": None,
+                "depth_signal": depth_signal,
+            }
 
         # Step 3: Block 2 — Write to episodic memory
         if self.episodic_mem is not None:
