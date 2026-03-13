@@ -31,6 +31,7 @@ A small LLM (SmolLM3 3B or OLMo 3 7B) augmented with adaptive compute routing, o
 ```bash
 # Install dependencies
 pip install -r requirements.txt
+pip install -r requirements_tpu.txt  # TPU/XLA only
 
 # Run unit tests
 pytest tests/ -v
@@ -58,6 +59,10 @@ tests/                   # Unit tests per block
 2. **Ablation** — Kaggle A100 30h/wk, SmolLM3 3B bf16
 3. **Main results** — TPU v3/v4 (TRC), OLMo 3 7B
 4. **Scaling** — TPU v4 (TRC), OLMo 3 32B
+
+For TPU runs, set `training.device: xla` in the YAML passed to
+`CognitiveTrainer`. The trainer now handles XLA optimizer stepping,
+dataloader wrapping, and checkpoint saves when `torch-xla` is installed.
 
 ## Base Models
 

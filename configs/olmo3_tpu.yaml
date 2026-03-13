@@ -10,6 +10,7 @@ use_block5: true
 use_block6: true
 
 training:
+  device: xla
   batch_size: 16
   gradient_accumulation: 4  # Effective batch = 64
   learning_rate: 1e-4

@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from dataclasses import dataclass
 
+from cognitive_llm.training.device import resolve_device
+
 
 @dataclass
 class BenchmarkResult:
@@ -38,7 +40,7 @@ class BenchmarkRunner:
     Args:
         model_path: Path to saved model checkpoint or HuggingFace ID.
         output_dir: Directory to save results.
-        device: Device to run on (default: 'cuda').
+        device: Device to run on (default: 'auto').
         batch_size: Evaluation batch size (default: 8).
     """
 
@@ -46,13 +48,13 @@ class BenchmarkRunner:
         self,
         model_path: str,
         output_dir: str = "./results",
-        device: str = "cuda",
+        device: str = "auto",
         batch_size: int = 8,
     ):
         self.model_path = model_path
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.device = device
+        self.device = str(resolve_device(device))
         self.batch_size = batch_size
 
     def run_all(self, tasks: list[str] | None = None) -> list[BenchmarkResult]:
@@ -151,13 +153,18 @@ class BenchmarkRunner:
         print("=" * 60)
 
     @staticmethod
-    def get_lm_eval_command(model_path: str, tasks: str = "gsm8k,arc_challenge,hellaswag,mathqa") -> str:
+    def get_lm_eval_command(
+        model_path: str,
+        tasks: str = "gsm8k,arc_challenge,hellaswag,mathqa",
+        device: str = "auto",
+        batch_size: int = 8,
+    ) -> str:
         """Generate the lm-eval CLI command string."""
         return (
             f"lm_eval --model hf "
             f"--model_args pretrained={model_path} "
             f"--tasks {tasks} "
-            f"--device cuda "
-            f"--batch_size 8 "
+            f"--device {resolve_device(device)} "
+            f"--batch_size {batch_size} "
             f"--output_path ./results/"
         )

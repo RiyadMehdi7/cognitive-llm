@@ -5,7 +5,6 @@ Handles the weighted combination of LM loss and auxiliary cognitive block losses
 gradient clipping, checkpointing, and wandb logging.
 """
 
-import os
 from pathlib import Path
 
 import torch
@@ -14,6 +13,17 @@ import torch.nn.functional as F
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
+
+from cognitive_llm.training.device import (
+    is_primary_process,
+    mark_step,
+    move_batch_to_device,
+    move_model_to_device,
+    optimizer_step,
+    resolve_device,
+    save_checkpoint,
+    wrap_dataloader,
+)
 
 try:
     import wandb
@@ -90,6 +100,7 @@ class CognitiveTrainer:
         self.lambda_config = lambda_config or LAMBDA_CONFIG
 
         # Training hyperparameters
+        self.device = resolve_device(self.config.get("device", "auto"), model=model)
         self.lr = self.config.get("learning_rate", 2e-4)
         self.max_steps = self.config.get("max_steps", 500)
         self.warmup_steps = self.config.get("warmup_steps", 100)
@@ -98,7 +109,16 @@ class CognitiveTrainer:
         self.check_every = self.config.get("eval_every_n_steps", 100)
         self.save_every = self.config.get("save_every_n_steps", 500)
         self.checkpoint_dir = Path(self.config.get("checkpoint_dir", "./checkpoints"))
-        self.use_wandb = self.config.get("use_wandb", True) and wandb is not None
+        self.is_primary = is_primary_process(self.device)
+        self.use_wandb = (
+            self.config.get("use_wandb", True)
+            and wandb is not None
+            and self.is_primary
+        )
+
+        self.model = move_model_to_device(model, self.device)
+        self.train_dataloader = wrap_dataloader(self.train_dataloader, self.device)
+        self.eval_dataloader = wrap_dataloader(self.eval_dataloader, self.device)
 
         # Optimizer — only train non-frozen parameters
         trainable_params = [p for p in model.parameters() if p.requires_grad]
@@ -138,12 +158,10 @@ class CognitiveTrainer:
                 batch = next(data_iter)
 
             # Move to device
-            device = next(self.model.parameters()).device
-            input_ids = batch["input_ids"].to(device)
+            batch = move_batch_to_device(batch, self.device)
+            input_ids = batch["input_ids"]
             attention_mask = batch.get("attention_mask", None)
-            if attention_mask is not None:
-                attention_mask = attention_mask.to(device)
-            labels = batch.get("labels", input_ids.clone()).to(device)
+            labels = batch.get("labels", input_ids.clone())
 
             # Forward pass
             outputs = self.model(
@@ -166,9 +184,10 @@ class CognitiveTrainer:
                 nn.utils.clip_grad_norm_(
                     self.model.parameters(), self.max_grad_norm
                 )
-                self.optimizer.step()
+                optimizer_step(self.optimizer, self.device)
                 self.scheduler.step()
-                self.optimizer.zero_grad()
+                self.optimizer.zero_grad(set_to_none=True)
+                mark_step(self.device)
 
                 self.global_step += 1
                 step_loss = accum_loss
@@ -190,7 +209,7 @@ class CognitiveTrainer:
                 if self.use_wandb:
                     wandb.log(log_dict, step=self.global_step)
 
-                if self.global_step % 10 == 0:
+                if self.is_primary and self.global_step % 10 == 0:
                     print(
                         f"Step {self.global_step}: loss={step_loss:.4f} "
                         f"lm_loss={step_lm_loss:.4f}"
@@ -217,12 +236,10 @@ class CognitiveTrainer:
         n_batches = 0
 
         for batch in self.eval_dataloader:
-            device = next(self.model.parameters()).device
-            input_ids = batch["input_ids"].to(device)
+            batch = move_batch_to_device(batch, self.device)
+            input_ids = batch["input_ids"]
             attention_mask = batch.get("attention_mask", None)
-            if attention_mask is not None:
-                attention_mask = attention_mask.to(device)
-            labels = batch.get("labels", input_ids.clone()).to(device)
+            labels = batch.get("labels", input_ids.clone())
 
             outputs = self.model(
                 input_ids=input_ids,
@@ -234,12 +251,14 @@ class CognitiveTrainer:
             n_batches += 1
 
         avg_loss = total_loss / max(n_batches, 1)
-        print(f"  Assessment loss: {avg_loss:.4f}")
+        if self.is_primary:
+            print(f"  Assessment loss: {avg_loss:.4f}")
 
         if self.use_wandb:
             wandb.log({"assessment/loss": avg_loss}, step=self.global_step)
 
         self.model.train(True)
+        mark_step(self.device)
         return avg_loss
 
     def _save_checkpoint(self) -> None:
@@ -251,7 +270,7 @@ class CognitiveTrainer:
         filename = f"cognitive_step{self.global_step}_blocks{block_flags}.pt"
         path = self.checkpoint_dir / filename
 
-        torch.save(
+        save_checkpoint(
             {
                 "model_state_dict": self.model.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),
@@ -261,5 +280,7 @@ class CognitiveTrainer:
                 "train_losses": self.train_losses,
             },
             path,
+            self.device,
         )
-        print(f"  Checkpoint saved: {path}")
+        if self.is_primary:
+            print(f"  Checkpoint saved: {path}")
