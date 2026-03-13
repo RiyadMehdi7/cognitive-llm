@@ -69,6 +69,11 @@ class EpisodicMemory(nn.Module):
         """
         assert self.memory_values is not None, "Call reset() before write()"
 
+        # Cast to module dtype for computation
+        compute_dtype = self.memory_keys.dtype
+        x = x.to(dtype=compute_dtype)
+        self.memory_values = self.memory_values.to(dtype=compute_dtype)
+
         gate = self.write_gate(x)  # (B, S, 1)
 
         # Find most similar memory slot for each token via soft attention
@@ -104,7 +109,11 @@ class EpisodicMemory(nn.Module):
         """
         assert self.memory_values is not None, "Call reset() before read()"
 
+        orig_dtype = query.dtype
+        compute_dtype = self.memory_keys.dtype
+        query = query.to(dtype=compute_dtype)
+
         keys_exp = self.memory_keys.unsqueeze(0).expand(query.shape[0], -1, -1)
         mem_out, _ = self.read_attn(query, keys_exp, self.memory_values)
         combined = torch.cat([query, mem_out], dim=-1)
-        return self.combine(combined)
+        return self.combine(combined).to(dtype=orig_dtype)

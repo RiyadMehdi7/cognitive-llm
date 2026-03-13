@@ -170,13 +170,16 @@ class CognitiveModel(nn.Module):
             self.gating_policy = self.gating_policy.to(device=target_device)
         self._blocks_moved = True
 
-    def _can_use_base_forward(self) -> bool:
-        """Use the base model path when no inter-layer cognitive blocks are active."""
+    def _needs_layer_loop(self) -> bool:
+        """Only use the manual layer loop when blocks need inter-layer access.
+
+        Block 2 (episodic memory) and Block 5 (RL gating) operate before/after
+        the transformer stack, not between layers, so they are compatible with
+        the base model forward path.
+        """
         return (
-            self.episodic_mem is None
-            and self.gating_policy is None
-            and all(c is None for c in self.critics)
-            and all(p is None for p in self.pred_coding)
+            any(c is not None for c in self.critics)
+            or any(p is not None for p in self.pred_coding)
         )
 
     def forward(
@@ -210,75 +213,91 @@ class CognitiveModel(nn.Module):
             hidden, depth_signal = self.surprise_gate(hidden)
             surprise_loss = self.surprise_gate.get_surprise_loss(hidden)
 
-        # Delegate to the base model whenever possible. This keeps architecture-
-        # specific details like position embeddings and cache handling inside
-        # Hugging Face's forward path, which is required for Llama-family models.
-        if self._can_use_base_forward():
-            base_out = self.base(
-                inputs_embeds=hidden,
-                attention_mask=attention_mask,
-                labels=labels,
-                return_dict=True,
-            )
-            return {
-                "logits": base_out.logits,
-                "lm_loss": base_out.loss,
-                "surprise_loss": surprise_loss,
-                "critic_losses": [],
-                "pred_losses": [],
-                "gating_actions": None,
-                "depth_signal": depth_signal,
-            }
-
-        # Step 3: Block 2 — Write to episodic memory
+        # Step 3: Block 2 — Write to episodic memory (pre-transformer)
         if self.episodic_mem is not None:
             self.episodic_mem.reset(hidden.shape[0], hidden.device)
             self.episodic_mem.write(hidden)
 
-        # Step 4: Transformer layers with optional Block 3 + 4
+        # Choose forward strategy based on which blocks are active
         critic_losses = []
         pred_losses = []
-        prev_hidden = None
-        layers = self._get_layers()
-
-        for i, layer in enumerate(layers):
-            # Block 4: predictive coding (modify input)
-            if i < len(self.pred_coding) and self.pred_coding[i] is not None:
-                hidden, pl = self.pred_coding[i](hidden, prev_hidden)
-                pred_losses.append(pl)
-
-            prev_hidden = hidden.detach()
-
-            # Standard transformer layer
-            layer_out = layer(hidden, attention_mask=attention_mask)
-            # Handle both tuple and tensor returns
-            hidden = layer_out[0] if isinstance(layer_out, tuple) else layer_out
-
-            # Block 3: critic (auxiliary loss, no modification)
-            if i < len(self.critics) and self.critics[i] is not None:
-                critic_losses.append(self.critics[i](hidden))
-
-        # Step 5: Block 2 — Read from episodic memory
-        if self.episodic_mem is not None:
-            hidden = self.episodic_mem.read(hidden)
-
-        # Step 6: Block 5 — RL gating
         gating_actions = None
-        if self.gating_policy is not None:
-            gating_actions, _, _ = self.gating_policy.get_action(hidden)
 
-        # Step 7: Output projection
-        hidden = self._get_final_norm()(hidden)
-        logits = self._get_lm_head()(hidden)
-
-        # Step 8: Compute losses
-        lm_loss = None
-        if labels is not None:
-            lm_loss = F.cross_entropy(
-                logits.view(-1, logits.size(-1)),
-                labels.view(-1),
-                ignore_index=-100,
+        if not self._needs_layer_loop():
+            # Fast path: delegate to base model (handles position embeddings,
+            # RoPE, caching, etc.). Works with B1, B2, B5, B6.
+            need_hidden = self.episodic_mem is not None or self.gating_policy is not None
+            base_out = self.base(
+                inputs_embeds=hidden,
+                attention_mask=attention_mask,
+                labels=labels if not need_hidden else None,
+                output_hidden_states=need_hidden,
+                return_dict=True,
             )
+
+            if need_hidden:
+                last_hidden = base_out.hidden_states[-1]
+
+                # Block 2 — Read from episodic memory (post-transformer)
+                if self.episodic_mem is not None:
+                    last_hidden = self.episodic_mem.read(last_hidden)
+
+                # Block 5 — RL gating (post-transformer)
+                if self.gating_policy is not None:
+                    gating_actions, _, _ = self.gating_policy.get_action(last_hidden)
+
+                # Recompute logits with augmented hidden states
+                logits = self._get_lm_head()(self._get_final_norm()(last_hidden))
+                lm_loss = None
+                if labels is not None:
+                    lm_loss = F.cross_entropy(
+                        logits.view(-1, logits.size(-1)),
+                        labels.view(-1),
+                        ignore_index=-100,
+                    )
+            else:
+                logits = base_out.logits
+                lm_loss = base_out.loss
+        else:
+            # Slow path: manual layer loop for Block 3 (critic) / Block 4 (pred coding)
+            prev_hidden = None
+            layers = self._get_layers()
+
+            for i, layer in enumerate(layers):
+                # Block 4: predictive coding (modify input)
+                if i < len(self.pred_coding) and self.pred_coding[i] is not None:
+                    hidden, pl = self.pred_coding[i](hidden, prev_hidden)
+                    pred_losses.append(pl)
+
+                prev_hidden = hidden.detach()
+
+                # Standard transformer layer
+                layer_out = layer(hidden, attention_mask=attention_mask)
+                hidden = layer_out[0] if isinstance(layer_out, tuple) else layer_out
+
+                # Block 3: critic (auxiliary loss, no modification)
+                if i < len(self.critics) and self.critics[i] is not None:
+                    critic_losses.append(self.critics[i](hidden))
+
+            # Block 2 — Read from episodic memory
+            if self.episodic_mem is not None:
+                hidden = self.episodic_mem.read(hidden)
+
+            # Block 5 — RL gating
+            if self.gating_policy is not None:
+                gating_actions, _, _ = self.gating_policy.get_action(hidden)
+
+            # Output projection
+            hidden = self._get_final_norm()(hidden)
+            logits = self._get_lm_head()(hidden)
+
+            lm_loss = None
+            if labels is not None:
+                lm_loss = F.cross_entropy(
+                    logits.view(-1, logits.size(-1)),
+                    labels.view(-1),
+                    ignore_index=-100,
+                )
 
         return {
             "logits": logits,
