@@ -87,15 +87,18 @@ class CognitiveModel(nn.Module):
     def _get_model_backbone(self) -> nn.Module:
         """Get the transformer backbone (handles PEFT wrappers and different architectures).
 
-        Walks down .model attributes until finding a module with embed_tokens or wte,
-        which indicates the actual transformer backbone (e.g. LlamaModel).
+        Walks down .model / .base_model attributes until finding a module with
+        embed_tokens or wte, which indicates the actual transformer backbone.
+        PEFT hierarchy: PeftModel.base_model -> CausalLM.model -> backbone
         """
         module = self.base
-        # Walk through PEFT / wrapper layers until we find the backbone
         for _ in range(5):  # safety limit
             if hasattr(module, "embed_tokens") or hasattr(module, "wte"):
                 return module
-            if hasattr(module, "model"):
+            # PEFT wraps via .base_model, HF models use .model
+            if hasattr(module, "base_model"):
+                module = module.base_model
+            elif hasattr(module, "model"):
                 module = module.model
             elif hasattr(module, "transformer"):
                 return module.transformer
