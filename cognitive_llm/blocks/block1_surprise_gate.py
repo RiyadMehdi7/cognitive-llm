@@ -59,14 +59,21 @@ class SurpriseGate(nn.Module):
             Tuple of (x, depth) where depth is (batch, seq_len) with values
             in [0, n_buckets-1]. Used by CognitiveModel to route layers.
         """
+        compute_dtype = self.prior.weight.dtype
+        x_compute = x.to(dtype=compute_dtype)
+
         # Update EMA prior
         with torch.no_grad():
-            current_mean = x.mean(dim=[0, 1], keepdim=False).unsqueeze(0)
-            self.ema_hidden.mul_(self.ema_decay).add_(current_mean, alpha=1 - self.ema_decay)
+            current_mean = x_compute.mean(dim=[0, 1], keepdim=False).unsqueeze(0)
+            current_mean = current_mean.to(dtype=self.ema_hidden.dtype)
+            self.ema_hidden.mul_(self.ema_decay).add_(
+                current_mean, alpha=1 - self.ema_decay
+            )
 
         # Compute surprise: norm of difference between x and prior prediction
-        expected = self.prior(self.ema_hidden).unsqueeze(1).expand_as(x)
-        surprise_vec = x - expected
+        expected = self.prior(self.ema_hidden.to(dtype=compute_dtype))
+        expected = expected.unsqueeze(1).expand_as(x_compute)
+        surprise_vec = x_compute - expected
         surprise_score = torch.sigmoid(self.surprise_proj(surprise_vec))  # (B, S, 1)
 
         # Assign depth bucket: 0=shallow, 1=mid, 2=deep
@@ -87,6 +94,7 @@ class SurpriseGate(nn.Module):
         Returns:
             Scalar MSE loss between predicted and actual next-token hidden states.
         """
-        predicted = self.prior(x[:, :-1])
-        target = x[:, 1:].detach()
+        x_compute = x.to(dtype=self.prior.weight.dtype)
+        predicted = self.prior(x_compute[:, :-1])
+        target = x_compute[:, 1:].detach()
         return F.mse_loss(predicted, target)

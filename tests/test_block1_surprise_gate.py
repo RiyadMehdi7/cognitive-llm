@@ -70,3 +70,15 @@ class TestSurpriseGate:
             gate = SurpriseGate(d_model=128, n_buckets=n_buckets)
             _, depth = gate(sample_input)
             assert depth.max() <= n_buckets - 1
+
+    def test_half_precision_inputs_are_supported(self):
+        """Half-precision activations should not fail against float32 weights."""
+        gate = SurpriseGate(d_model=128)
+        sample_input = torch.randn(2, 16, 128, dtype=torch.float16)
+
+        hidden, depth = gate(sample_input)
+        loss = gate.get_surprise_loss(sample_input)
+
+        assert hidden.dtype == torch.float16
+        assert depth.shape == (2, 16)
+        assert loss.dim() == 0
