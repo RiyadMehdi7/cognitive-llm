@@ -145,6 +145,23 @@ class CognitiveModel(nn.Module):
             Dict with keys: logits, lm_loss, surprise_loss, critic_losses,
             pred_losses, gating_actions, depth_signal.
         """
+        # Step 0: Lazily move cognitive blocks to match input device (once)
+        device = input_ids.device
+        if not hasattr(self, '_blocks_moved'):
+            if self.surprise_gate is not None:
+                self.surprise_gate = self.surprise_gate.to(device)
+            if self.episodic_mem is not None:
+                self.episodic_mem = self.episodic_mem.to(device)
+            for i, c in enumerate(self.critics):
+                if c is not None:
+                    self.critics[i] = c.to(device)
+            for i, p in enumerate(self.pred_coding):
+                if p is not None:
+                    self.pred_coding[i] = p.to(device)
+            if self.gating_policy is not None:
+                self.gating_policy = self.gating_policy.to(device)
+            self._blocks_moved = True
+
         # Step 1: Get embeddings from base model
         hidden = self._get_embed_tokens()(input_ids)
 
