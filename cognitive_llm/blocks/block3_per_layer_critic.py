@@ -1,13 +1,17 @@
 """
-Block 3: Per-Layer Critic — distributed value estimation.
+Block 3: Per-Layer Critic — distributed value estimation with TD learning.
 
 Position: Attached to every N-th transformer layer (default: every 4 layers).
           Does NOT modify activations — produces auxiliary loss only.
-Purpose: Distributed value estimation. Solves credit assignment in RL training
-         by providing intermediate reward signals throughout the network depth.
+Purpose: Distributed value estimation across network depth. Each critic
+         learns to predict the "remaining difficulty" at its layer using
+         bootstrapped TD targets from deeper critics, enabling true
+         credit assignment across layers.
 
-Reference: Inspired by temporal difference learning and multi-step value
-           estimation in deep RL.
+Reference: Inspired by temporal difference learning (Sutton 1988) and
+           distributed value estimation in deep RL. Neuroscience parallel:
+           Wang et al. 2018 showed prefrontal cortex implements distributed
+           value signals for credit assignment.
 """
 
 import torch
@@ -19,6 +23,11 @@ class LayerCritic(nn.Module):
     """
     Per-layer value head for distributed credit assignment.
     Attached every N layers. Does not modify forward pass.
+
+    Supports two modes:
+    - Supervised: compute_loss(hidden, td_target) regresses against a scalar target.
+    - TD bootstrapped: compute_td_loss(hidden, next_value, lm_loss, gamma) uses
+      bootstrapped targets from the next deeper critic.
 
     Args:
         d_model: Hidden dimension size.
@@ -49,7 +58,7 @@ class LayerCritic(nn.Module):
 
     def compute_loss(self, hidden_state: torch.Tensor, td_target: torch.Tensor) -> torch.Tensor:
         """
-        Compute TD loss between predicted and target values.
+        Compute MSE loss between predicted value and a scalar target.
 
         Args:
             hidden_state: Tensor of shape (batch, seq_len, d_model).
@@ -60,3 +69,32 @@ class LayerCritic(nn.Module):
         """
         v_pred = self(hidden_state)
         return F.mse_loss(v_pred.squeeze(-1), td_target)
+
+    def compute_td_loss(
+        self,
+        hidden_state: torch.Tensor,
+        next_value: torch.Tensor,
+        lm_loss: torch.Tensor,
+        gamma: float = 0.95,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Compute TD(0) loss with bootstrapped target from the next critic.
+
+        TD target: r + gamma * V(next_layer)
+        where r = per-example LM loss (the "cost" signal) and V(next_layer)
+        is the detached value estimate from the next deeper critic.
+
+        Args:
+            hidden_state: Tensor of shape (batch, seq_len, d_model).
+            next_value: Detached value from next deeper critic, shape (batch,).
+            lm_loss: Per-example LM loss, shape (batch,).
+            gamma: Discount factor across layers (default: 0.95).
+
+        Returns:
+            Tuple of (td_loss, current_value_detached) where current_value
+            is returned detached for the previous critic's bootstrap.
+        """
+        v_pred = self(hidden_state).squeeze(-1)  # (batch,)
+        td_target = lm_loss.detach() + gamma * next_value.detach()
+        td_loss = F.mse_loss(v_pred, td_target)
+        return td_loss, v_pred.detach()

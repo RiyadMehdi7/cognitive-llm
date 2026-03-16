@@ -47,3 +47,32 @@ class TestLayerCritic:
         out1 = critic(sample_input)
         out2 = critic(sample_input)
         assert torch.allclose(out1, out2)
+
+    def test_compute_td_loss(self, critic, sample_input):
+        """compute_td_loss must return (scalar_loss, detached_value)."""
+        next_value = torch.randn(2)
+        lm_loss = torch.randn(2).abs()
+        td_loss, current_value = critic.compute_td_loss(
+            sample_input, next_value, lm_loss, gamma=0.95,
+        )
+        assert td_loss.dim() == 0
+        assert td_loss.item() >= 0.0
+        assert current_value.shape == (2,)
+        assert not current_value.requires_grad
+
+    def test_td_bootstrap_chain(self, sample_input):
+        """Two critics should form a valid TD bootstrap chain."""
+        critic_shallow = LayerCritic(d_model=128)
+        critic_deep = LayerCritic(d_model=128)
+        lm_loss = torch.randn(2).abs()
+
+        # Deep critic bootstraps from terminal (lm_loss)
+        deep_loss, deep_value = critic_deep.compute_td_loss(
+            sample_input, lm_loss, lm_loss, gamma=0.95,
+        )
+        # Shallow critic bootstraps from deep critic's value
+        shallow_loss, shallow_value = critic_shallow.compute_td_loss(
+            sample_input, deep_value, lm_loss, gamma=0.95,
+        )
+        assert deep_loss.dim() == 0
+        assert shallow_loss.dim() == 0

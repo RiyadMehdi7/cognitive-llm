@@ -315,18 +315,42 @@ class CognitiveModel(nn.Module):
         self,
         hidden_states: list[torch.Tensor] | tuple[torch.Tensor, ...],
         per_example_loss: torch.Tensor | None,
+        gamma: float = 0.95,
     ) -> list[torch.Tensor]:
-        """Train critics against detached per-example language-model losses."""
+        """Train critics using TD(0) bootstrapping across layers.
+
+        The deepest critic bootstraps from the final LM loss. Each earlier
+        critic bootstraps from the next deeper critic's value estimate.
+        This creates a true temporal-difference learning signal across
+        network depth, enabling distributed credit assignment.
+        """
         if per_example_loss is None:
             return []
 
-        td_target = per_example_loss.detach()
-        critic_losses = []
-        for i, critic in enumerate(self.critics):
-            if critic is None:
-                continue
-            hidden_idx = min(i, len(hidden_states) - 1)
-            critic_losses.append(critic.compute_loss(hidden_states[hidden_idx], td_target))
+        # Collect active (critic_index, layer_index) pairs in layer order
+        active = [
+            (i, critic)
+            for i, critic in enumerate(self.critics)
+            if critic is not None
+        ]
+        if not active:
+            return []
+
+        # Bootstrap backwards: deepest critic first
+        critic_losses = [None] * len(active)
+        next_value = per_example_loss.detach()  # terminal value = actual LM loss
+
+        for rev_idx, (layer_idx, critic) in enumerate(reversed(active)):
+            hidden_idx = min(layer_idx, len(hidden_states) - 1)
+            td_loss, current_value = critic.compute_td_loss(
+                hidden_states[hidden_idx],
+                next_value,
+                per_example_loss,
+                gamma=gamma,
+            )
+            critic_losses[len(active) - 1 - rev_idx] = td_loss
+            next_value = current_value  # pass detached value to shallower critic
+
         return critic_losses
 
     def _apply_gating_actions(
