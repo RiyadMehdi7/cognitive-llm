@@ -41,39 +41,42 @@ class RolloutBuffer:
         state: torch.Tensor,
         action: torch.Tensor,
         log_prob: torch.Tensor,
-        reward: float,
+        reward: float | torch.Tensor,
         value: torch.Tensor,
-        done: bool,
+        done: bool | torch.Tensor,
     ) -> None:
         self.states.append(state.detach())
         self.actions.append(action.detach())
         self.log_probs.append(log_prob.detach())
-        self.rewards.append(reward)
+        reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=value.device)
+        done_tensor = torch.as_tensor(done, dtype=torch.float32, device=value.device)
+        if reward_tensor.dim() == 0:
+            reward_tensor = reward_tensor.expand_as(value)
+        if done_tensor.dim() == 0:
+            done_tensor = done_tensor.expand_as(value)
+        self.rewards.append(reward_tensor.detach())
         self.values.append(value.detach())
-        self.dones.append(done)
+        self.dones.append(done_tensor.detach())
 
     def compute_returns_and_advantages(
         self, gamma: float, gae_lambda: float
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute GAE advantages and discounted returns."""
-        rewards = torch.tensor(self.rewards, dtype=torch.float32)
-        values = torch.stack(self.values).squeeze()
-        dones = torch.tensor(self.dones, dtype=torch.float32)
+        rewards = torch.stack(self.rewards)  # (T, B)
+        values = torch.stack(self.values)  # (T, B)
+        dones = torch.stack(self.dones)  # (T, B)
 
-        n = len(rewards)
-        advantages = torch.zeros(n)
-        last_gae = 0.0
+        advantages = torch.zeros_like(rewards)
+        last_gae = torch.zeros_like(rewards[0])
 
-        for t in reversed(range(n)):
-            if t == n - 1:
-                next_value = 0.0
-            else:
-                next_value = values[t + 1]
+        for t in reversed(range(len(rewards))):
+            next_value = torch.zeros_like(values[t]) if t == len(rewards) - 1 else values[t + 1]
             delta = rewards[t] + gamma * next_value * (1 - dones[t]) - values[t]
-            advantages[t] = last_gae = delta + gamma * gae_lambda * (1 - dones[t]) * last_gae
+            last_gae = delta + gamma * gae_lambda * (1 - dones[t]) * last_gae
+            advantages[t] = last_gae
 
         returns = advantages + values
-        return returns, advantages
+        return returns.reshape(-1), advantages.reshape(-1)
 
     def clear(self) -> None:
         self.states.clear()
@@ -154,9 +157,9 @@ class PPOTrainer:
         )
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        states = torch.stack(self.buffer.states)
-        actions = torch.stack(self.buffer.actions)
-        old_log_probs = torch.stack(self.buffer.log_probs)
+        states = torch.cat(self.buffer.states, dim=0)
+        actions = torch.cat(self.buffer.actions, dim=0)
+        old_log_probs = torch.cat(self.buffer.log_probs, dim=0)
 
         total_policy_loss = 0.0
         total_value_loss = 0.0
@@ -164,23 +167,20 @@ class PPOTrainer:
         n_updates = 0
 
         for _ in range(cfg.n_epochs):
-            # Simple full-batch update (for small buffers)
-            # Expand states back to (batch, 1, d_model) for policy forward
-            states_expanded = states.unsqueeze(1)
-            probs, values = self.policy(states_expanded.squeeze(1) if states_expanded.dim() == 3 else states_expanded)
+            probs, values = self.policy(states.unsqueeze(1))
 
             dist = torch.distributions.Categorical(probs)
-            new_log_probs = dist.log_prob(actions.squeeze())
+            new_log_probs = dist.log_prob(actions)
             entropy = dist.entropy().mean()
 
             # Policy loss (clipped)
-            ratio = torch.exp(new_log_probs - old_log_probs.squeeze())
+            ratio = torch.exp(new_log_probs - old_log_probs)
             surr1 = ratio * advantages
             surr2 = torch.clamp(ratio, 1 - cfg.clip_eps, 1 + cfg.clip_eps) * advantages
             policy_loss = -torch.min(surr1, surr2).mean()
 
             # Value loss
-            value_loss = F.mse_loss(values.squeeze(), returns)
+            value_loss = F.mse_loss(values.squeeze(-1), returns)
 
             # Total loss
             loss = (

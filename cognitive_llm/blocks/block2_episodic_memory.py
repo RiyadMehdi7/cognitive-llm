@@ -64,6 +64,21 @@ class EpisodicMemory(nn.Module):
         # Memory values buffer (set during reset)
         self.memory_values: torch.Tensor | None = None
 
+    @staticmethod
+    def _normalize_batch_indices(
+        batch_indices: torch.Tensor | list[int] | None,
+        batch_size: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Normalize optional batch selectors to a 1D LongTensor."""
+        if batch_indices is None:
+            return torch.arange(batch_size, device=device)
+        if not isinstance(batch_indices, torch.Tensor):
+            return torch.tensor(batch_indices, device=device, dtype=torch.long)
+        if batch_indices.dtype == torch.bool:
+            return batch_indices.nonzero(as_tuple=False).squeeze(-1)
+        return batch_indices.to(device=device, dtype=torch.long)
+
     def reset(self, batch_size: int, device: torch.device) -> None:
         """
         Reset memory values at start of each sequence.
@@ -76,19 +91,27 @@ class EpisodicMemory(nn.Module):
             batch_size, self.mem_slots, self.d_model, device=device
         )
 
-    def write(self, x: torch.Tensor) -> None:
+    def write(
+        self,
+        x: torch.Tensor,
+        batch_indices: torch.Tensor | list[int] | None = None,
+    ) -> None:
         """
         Write hidden states to memory slots using soft attention.
 
         Args:
             x: Hidden states of shape (batch, seq_len, d_model).
+            batch_indices: Optional subset of batch rows to update.
         """
         assert self.memory_values is not None, "Call reset() before write()"
+        indices = self._normalize_batch_indices(batch_indices, self.memory_values.shape[0], x.device)
+        if indices.numel() == 0:
+            return
 
         # Cast to module dtype for computation
         compute_dtype = self.memory_keys.dtype
         x = x.to(dtype=compute_dtype)
-        self.memory_values = self.memory_values.to(dtype=compute_dtype)
+        memory_values = self.memory_values.index_select(0, indices).to(dtype=compute_dtype)
 
         gate = self.write_gate(x)  # (B, S, 1)
 
@@ -109,25 +132,35 @@ class EpisodicMemory(nn.Module):
         slot_gate = slot_gate.clamp(max=1.0).unsqueeze(-1)  # (B, mem_slots, 1)
 
         # Blend new writes with existing memory
-        self.memory_values = (
-            slot_gate * write_vals + (1 - slot_gate) * self.memory_values
-        )
+        updated = slot_gate * write_vals + (1 - slot_gate) * memory_values
+        self.memory_values[indices] = updated.to(dtype=self.memory_values.dtype)
 
-    def read(self, query: torch.Tensor) -> torch.Tensor:
+    def read(
+        self,
+        query: torch.Tensor,
+        batch_indices: torch.Tensor | list[int] | None = None,
+    ) -> torch.Tensor:
         """
         Read from memory using low-rank bottleneck attention + gated residual.
 
         Args:
             query: Query tensor of shape (batch, seq_len, d_model).
+            batch_indices: Optional subset of batch rows to read from.
 
         Returns:
             Augmented tensor of shape (batch, seq_len, d_model).
         """
         assert self.memory_values is not None, "Call reset() before read()"
+        indices = self._normalize_batch_indices(
+            batch_indices, self.memory_values.shape[0], query.device
+        )
+        if indices.numel() == 0:
+            return query
 
         orig_dtype = query.dtype
         compute_dtype = self.memory_keys.dtype
         query = query.to(dtype=compute_dtype)
+        memory_values = self.memory_values.index_select(0, indices).to(dtype=compute_dtype)
 
         # Low-rank attention over memory slots
         q = self.read_q_proj(query)  # (B, S, bottleneck)
@@ -138,7 +171,7 @@ class EpisodicMemory(nn.Module):
         attn = torch.softmax(attn, dim=-1)
 
         # Retrieve from memory values
-        mem_out = torch.bmm(attn, self.memory_values)  # (B, S, d_model)
+        mem_out = torch.bmm(attn, memory_values)  # (B, S, d_model)
 
         # Gated residual: query + gate * proj(mem_out)
         gate = torch.sigmoid(self.mem_gate)

@@ -96,6 +96,17 @@ class TestEpisodicMemory:
         # Memory should change after second write
         assert not torch.allclose(memory.memory_values, state1)
 
+    def test_subset_write_only_updates_selected_rows(self, memory):
+        """Selective writes should leave untouched batch rows unchanged."""
+        memory.reset(3, torch.device("cpu"))
+        initial = memory.memory_values.clone()
+
+        memory.write(torch.randn(1, 4, 128), batch_indices=torch.tensor([1]))
+
+        assert torch.allclose(memory.memory_values[0], initial[0])
+        assert not torch.allclose(memory.memory_values[1], initial[1])
+        assert torch.allclose(memory.memory_values[2], initial[2])
+
     def test_param_count_is_low_rank(self):
         """B2 with d_model=2048 should have ~5M params, not 25M."""
         mem = EpisodicMemory(d_model=2048, mem_slots=64, bottleneck_dim=128)
