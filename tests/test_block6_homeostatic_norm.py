@@ -78,3 +78,13 @@ class TestHomeostaticNorm:
             x = torch.randn(2, 8, 128)
             _ = norm(x)
         assert norm.step_count == 10
+
+    def test_wraps_existing_norm_module(self):
+        """Wrapping an existing norm should preserve a valid forward path."""
+        wrapped = HomeostaticNorm.from_norm(torch.nn.LayerNorm(128), d_model=128)
+        x = torch.randn(2, 8, 128)
+
+        out = wrapped(x)
+
+        assert out.shape == x.shape
+        assert isinstance(wrapped.base_norm, torch.nn.LayerNorm)

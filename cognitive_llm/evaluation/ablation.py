@@ -112,12 +112,16 @@ class AblationRunner:
         model_loader,
         trainer_cls,
         benchmark_runner=None,
+        train_dataloader=None,
+        eval_dataloader=None,
         output_dir: str = "./ablation_results",
     ):
         self.base_config = base_config
         self.model_loader = model_loader
         self.trainer_cls = trainer_cls
         self.benchmark_runner = benchmark_runner
+        self.train_dataloader = train_dataloader
+        self.eval_dataloader = eval_dataloader
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.results: list[AblationResult] = []
@@ -169,9 +173,17 @@ class AblationRunner:
         model = CognitiveModel(base_model, config)
 
         # Create trainer and train
-        # Note: actual dataloader creation is left to the caller
-        # This is a simplified interface
         result = AblationResult(experiment=experiment)
+        if self.train_dataloader is not None:
+            trainer = self.trainer_cls(
+                model=model,
+                train_dataloader=self.train_dataloader,
+                eval_dataloader=self.eval_dataloader,
+                config=config.get("training", config),
+                lambda_config=config.get("lambda_config"),
+            )
+            result.train_losses = trainer.train()
+            result.checkpoint_path = str(trainer.checkpoint_dir)
 
         if self.benchmark_runner:
             # Run benchmarks on the trained model

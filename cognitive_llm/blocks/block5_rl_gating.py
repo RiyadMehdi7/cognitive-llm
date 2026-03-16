@@ -32,6 +32,7 @@ class GatingPolicy(nn.Module):
 
     def __init__(self, d_model: int, hidden_dim: int = 128):
         super().__init__()
+        self.d_model = d_model
         self.policy_net = nn.Sequential(
             nn.Linear(d_model, hidden_dim),
             nn.GELU(),
@@ -42,6 +43,12 @@ class GatingPolicy(nn.Module):
             nn.GELU(),
             nn.Linear(hidden_dim, 1),
         )
+        self.deepen_net = nn.Sequential(
+            nn.Linear(d_model, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, d_model),
+        )
+        self.deepen_scale = nn.Parameter(torch.tensor(0.0))
         self.log_std = nn.Parameter(torch.zeros(self.N_ACTIONS))
 
     def forward(self, h: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -81,3 +88,8 @@ class GatingPolicy(nn.Module):
             dist = torch.distributions.Categorical(probs)
             action = dist.sample()
         return action, probs, value
+
+    def deepen(self, h: torch.Tensor) -> torch.Tensor:
+        """Apply a small learned residual update for the deepen-compute action."""
+        scale = torch.tanh(self.deepen_scale)
+        return h + scale * self.deepen_net(h)
