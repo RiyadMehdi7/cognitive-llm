@@ -124,7 +124,7 @@ def _run_training() -> None:
         model_id,
         quantization_config=bnb_config,
         device_map="auto",
-        torch_dtype=compute_dtype,
+        dtype=compute_dtype,
     )
 
     # -- Vanilla mode: skip LoRA, eval-only (no training) ----------------------

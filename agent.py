@@ -93,7 +93,7 @@ def read_results() -> list[dict]:
 
 
 def completed_exp_ids() -> set[str]:
-    return {r["exp_id"] for r in read_results()}
+    return {r["exp_id"] for r in read_results() if "exp_id" in r}
 
 
 def _parse_float(value: str) -> float | None:
