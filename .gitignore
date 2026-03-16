@@ -39,3 +39,14 @@ Thumbs.db
 *.bin
 *.safetensors
 *.gguf
+
+# Research artifacts
+papers/
+session_state.json
+morning_report.md
+draft_paper.md
+lab_notebook.md
+results.tsv
+notebook_archive.md
+context_compact_*.log
+experiments/
