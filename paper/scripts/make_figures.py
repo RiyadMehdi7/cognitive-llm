@@ -155,7 +155,7 @@ def make_architecture_figure() -> None:
     gap = 0.12   # arrow gap from box edge
 
     # ── Layer positions inside stack ──
-    ly_top = y_stack_top - 0.42
+    ly_top = y_stack_top - 0.58
     ly_bot = y_stack_bot + 0.42
     ly_mid = (ly_top + ly_bot) / 2
     inner_w = 2.0
@@ -192,11 +192,12 @@ def make_architecture_figure() -> None:
     )
     ax.add_patch(stack_patch)
 
-    # Stack label
-    ax.text(C, y_stack_top + 0.08, "Transformer Stack (32 layers)",
-            ha="center", va="bottom",
-            fontsize=7.5, color=_CORE_EDGE, fontstyle="italic",
-            fontweight="medium")
+    # Stack label — placed inside the container, below the top edge
+    ax.text(C, y_stack_top - 0.08, "Transformer Stack (32 layers)",
+            ha="center", va="top",
+            fontsize=8.5, color=_CORE_EDGE, fontstyle="italic",
+            fontweight="medium",
+            bbox=dict(facecolor=_STACK_BG, edgecolor="none", pad=1.5))
 
     # Internal layer boxes
     _box(ax, C, ly_top, inner_w, inner_h, "Layer N", _WHITE, "#bdbdbd",

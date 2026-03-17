@@ -7,7 +7,7 @@ Neuroscience-inspired architectural blocks for small language models. We augment
 ## Architecture
 
 <p align="center">
-  <img src="paper/figures/architecture_overview.png" width="680" alt="Cognitive LLM architecture overview"/>
+  <img src="paper/figures/architecture_overview.png" width="720" alt="Cognitive LLM architecture: six neuroscience-inspired blocks augmenting a frozen transformer backbone"/>
 </p>
 
 Six plug-in blocks wrap or augment a frozen transformer backbone. Each block is independently toggleable for clean ablation:
