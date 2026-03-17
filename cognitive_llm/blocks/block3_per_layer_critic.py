@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Block 3: Per-Layer Critic — distributed value estimation with TD learning.
 

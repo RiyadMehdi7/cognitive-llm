@@ -9,7 +9,7 @@ Usage:
 
 Outputs:
     val_loss: X.XXXXXX      (printed on success)
-    gsm8k_acc: X.XX         (printed on success, % on 50 test samples)
+    gsm8k_acc: X.XX         (printed on success when GSM8K eval is enabled)
     CRASH: OOM              (printed on torch.cuda.OutOfMemoryError)
     CRASH: NaN              (printed on NaN loss)
     CRASH: <message>        (printed on any other exception)
@@ -21,6 +21,12 @@ import sys
 # CONFIG - the agent modifies only this dict between experiments
 # -----------------------------------------------------------------------------
 CONFIG = {
+    # Runtime / model selection
+    "model_id": "HuggingFaceTB/SmolLM-360M",
+    "device": "auto",
+    "quantization": "none",
+    "dtype": "auto",
+
     # Block flags
     "use_block1": False,
     "use_block2": False,
@@ -31,12 +37,13 @@ CONFIG = {
 
     # Training hyperparameters
     "learning_rate": 2e-4,
-    "max_steps": 1000,
-    "warmup_steps": 100,
+    "max_steps": 100,
+    "warmup_steps": 10,
     "gradient_accumulation": 4,
     "max_grad_norm": 1.0,
     "batch_size": 4,
     "max_seq_len": 512,
+    "gradient_checkpointing": True,
 
     # Loss weights
     "lambda_surprise": 0.01,
@@ -44,13 +51,110 @@ CONFIG = {
     "lambda_predictive": 0.05,
 
     # Eval settings
-    "gsm8k_eval_samples": 50,
-    "n_baseline_runs": 3,
+    "gsm8k_eval_samples": 0,
+    "n_baseline_runs": 1,
+    "val_subset_size": 64,
+    "max_generation_tokens": 32,
 
     # Vanilla mode: skip LoRA, eval-only (no training)
     "skip_lora": False,
 }
 # -----------------------------------------------------------------------------
+
+
+def _get_torch_dtype(dtype_name, runtime_device):
+    import torch
+
+    if dtype_name == "auto":
+        if runtime_device.type == "xla":
+            return torch.bfloat16
+        if runtime_device.type == "cuda":
+            capability = torch.cuda.get_device_capability(0)
+            return torch.bfloat16 if capability[0] >= 8 else torch.float16
+        return torch.float32
+
+    dtype_map = {
+        "bf16": torch.bfloat16,
+        "fp16": torch.float16,
+        "fp32": torch.float32,
+    }
+    if dtype_name not in dtype_map:
+        raise ValueError(
+            f"Unsupported dtype={dtype_name!r}; expected one of "
+            f"{sorted(dtype_map)} or 'auto'."
+        )
+    return dtype_map[dtype_name]
+
+
+def _resolve_runtime():
+    import torch
+
+    from cognitive_llm.training.device import resolve_device
+
+    runtime_device = resolve_device(CONFIG.get("device", "auto"))
+    compute_dtype = _get_torch_dtype(CONFIG.get("dtype", "auto"), runtime_device)
+
+    if runtime_device.type == "cuda":
+        accelerator = torch.cuda.get_device_name(0)
+    elif runtime_device.type == "xla":
+        accelerator = "TPU/XLA"
+    else:
+        accelerator = str(runtime_device)
+
+    print(
+        f"Device: {runtime_device}  accelerator: {accelerator}  dtype: {compute_dtype}",
+        flush=True,
+    )
+    return runtime_device, compute_dtype
+
+
+def _load_base_model(model_id, runtime_device, compute_dtype):
+    from transformers import AutoModelForCausalLM
+
+    quantization = str(CONFIG.get("quantization", "none")).lower()
+    use_gradient_checkpointing = (
+        CONFIG.get("gradient_checkpointing", False)
+        and runtime_device.type != "xla"
+    )
+    model_kwargs = {
+        "torch_dtype": compute_dtype,
+        "trust_remote_code": True,
+    }
+
+    if quantization in {"4bit", "4-bit"}:
+        if runtime_device.type != "cuda":
+            raise RuntimeError(
+                "4-bit quantization requires CUDA; set CONFIG['quantization'] = "
+                "'none' for TPU/XLA runs."
+            )
+        from transformers import BitsAndBytesConfig
+
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=compute_dtype,
+            bnb_4bit_use_double_quant=True,
+        )
+        model_kwargs.update({
+            "quantization_config": bnb_config,
+            "device_map": "auto",
+        })
+    elif quantization != "none":
+        raise ValueError(
+            f"Unsupported quantization={quantization!r}; expected 'none' or '4bit'."
+        )
+    else:
+        model_kwargs["low_cpu_mem_usage"] = True
+
+    model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
+
+    if use_gradient_checkpointing:
+        if hasattr(model, "gradient_checkpointing_enable"):
+            model.gradient_checkpointing_enable()
+        if hasattr(model.config, "use_cache"):
+            model.config.use_cache = False
+
+    return model
 
 
 def _run_training() -> None:
@@ -62,26 +166,30 @@ def _run_training() -> None:
     from datasets import load_dataset
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
     from torch.utils.data import DataLoader, random_split
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from transformers import AutoTokenizer
 
     from cognitive_llm.models.cognitive_model import CognitiveModel
+    from cognitive_llm.training.device import (
+        mark_step,
+        move_batch_to_device,
+        move_model_to_device,
+        wrap_dataloader,
+    )
     from cognitive_llm.training.trainer import CognitiveTrainer
 
     # -- Device / dtype -------------------------------------------------------
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA GPU required - no GPU found")
-    capability = torch.cuda.get_device_capability(0)
-    compute_dtype = torch.bfloat16 if capability[0] >= 8 else torch.float16
-    print(f"GPU: {torch.cuda.get_device_name(0)}  dtype: {compute_dtype}")
+    runtime_device, compute_dtype = _resolve_runtime()
 
     # -- Load tokenizer -------------------------------------------------------
-    model_id = "HuggingFaceTB/SmolLM3-3B"
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model_id = CONFIG["model_id"]
+    print("Stage: loading tokenizer", flush=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     # -- Tokenize GSM8K train split -------------------------------------------
     max_seq_len = CONFIG["max_seq_len"]
+    print("Stage: loading GSM8K train split", flush=True)
     raw_train = load_dataset("gsm8k", "main", split="train")
 
     def tokenize(examples):
@@ -98,6 +206,7 @@ def _run_training() -> None:
         out["labels"] = [ids.copy() for ids in out["input_ids"]]
         return out
 
+    print("Stage: tokenizing GSM8K train split", flush=True)
     tokenized = raw_train.map(tokenize, batched=True, remove_columns=raw_train.column_names)
     tokenized.set_format(type="torch")
 
@@ -108,31 +217,34 @@ def _run_training() -> None:
         tokenized, [n_train, n_val],
         generator=torch.Generator().manual_seed(42),
     )
+    val_subset_size = int(CONFIG.get("val_subset_size", n_val))
+    if val_subset_size > 0 and len(val_ds) > val_subset_size:
+        _, val_ds = random_split(
+            val_ds,
+            [len(val_ds) - val_subset_size, val_subset_size],
+            generator=torch.Generator().manual_seed(42),
+        )
+        print(f"Stage: capped validation subset to {len(val_ds)} examples", flush=True)
 
     batch_size = CONFIG["batch_size"]
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True)
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
-    # -- Load base model with 4-bit quantization ------------------------------
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=compute_dtype,
-        bnb_4bit_use_double_quant=True,
-    )
-    base_model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        quantization_config=bnb_config,
-        device_map="auto",
-        dtype=compute_dtype,
-    )
+    # -- Load base model ------------------------------------------------------
+    print("Stage: loading base model", flush=True)
+    base_model = _load_base_model(model_id, runtime_device, compute_dtype)
 
     # -- Vanilla mode: skip LoRA, eval-only (no training) ----------------------
     skip_lora = CONFIG.get("skip_lora", False)
+    quantization = str(CONFIG.get("quantization", "none")).lower()
 
     if not skip_lora:
-        # -- Apply LoRA (same config as notebooks/colab_debug.ipynb) ----------
-        base_model = prepare_model_for_kbit_training(base_model)
+        # Full-precision LoRA works on TPU; k-bit prep stays CUDA-only.
+        if quantization in {"4bit", "4-bit"}:
+            base_model = prepare_model_for_kbit_training(base_model)
+        elif CONFIG.get("gradient_checkpointing", False):
+            if hasattr(base_model, "enable_input_require_grads"):
+                base_model.enable_input_require_grads()
         lora_config = LoraConfig(
             r=16,
             lora_alpha=32,
@@ -146,16 +258,16 @@ def _run_training() -> None:
     # -- Wrap with CognitiveModel ---------------------------------------------
     block_config = {k: CONFIG[k] for k in CONFIG if k.startswith("use_block")}
     model = CognitiveModel(base_model, block_config)
+    model = move_model_to_device(model, runtime_device)
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Trainable params: {trainable:,}")
-    print(f"Active blocks: {[k for k, v in block_config.items() if v]}")
-    print(f"Mode: {'vanilla (eval-only)' if skip_lora else 'LoRA + train'}")
+    print(f"Trainable params: {trainable:,}", flush=True)
+    print(f"Active blocks: {[k for k, v in block_config.items() if v]}", flush=True)
+    print(f"Mode: {'vanilla (eval-only)' if skip_lora else 'LoRA + train'}", flush=True)
 
     if skip_lora:
         # Vanilla baseline: just evaluate, no training
         from cognitive_llm.training.trainer import compute_total_loss
-        from cognitive_llm.training.device import move_batch_to_device
 
         lambda_config = {
             "surprise": CONFIG["lambda_surprise"],
@@ -163,11 +275,13 @@ def _run_training() -> None:
             "predictive": CONFIG["lambda_predictive"],
         }
         device = next(model.parameters()).device
+        eval_loader = wrap_dataloader(val_loader, device)
         model.eval()
         total_loss = 0.0
         n_batches = 0
+        print("Stage: running vanilla validation", flush=True)
         with torch.no_grad():
-            for batch in val_loader:
+            for batch in eval_loader:
                 batch = move_batch_to_device(batch, device)
                 outputs = model(
                     input_ids=batch["input_ids"],
@@ -176,6 +290,7 @@ def _run_training() -> None:
                 )
                 total_loss += compute_total_loss(outputs, lambda_config).item()
                 n_batches += 1
+                mark_step(device)
         val_loss = total_loss / max(n_batches, 1)
     else:
         # -- Lambda config ----------------------------------------------------
@@ -186,7 +301,7 @@ def _run_training() -> None:
         }
 
         training_config = {
-            "device": "auto",
+            "device": CONFIG.get("device", "auto"),
             "learning_rate": CONFIG["learning_rate"],
             "max_steps": CONFIG["max_steps"],
             "warmup_steps": CONFIG["warmup_steps"],
@@ -205,6 +320,7 @@ def _run_training() -> None:
             config=training_config,
             lambda_config=lambda_config,
         )
+        print("Stage: starting training loop", flush=True)
         losses = trainer.train()
 
         # Check for NaN in final training loss
@@ -220,50 +336,57 @@ def _run_training() -> None:
         sys.exit(1)
 
     # -- GSM8K accuracy on test set -------------------------------------------
-    n_eval = CONFIG["gsm8k_eval_samples"]
-    test_raw = load_dataset("gsm8k", "main", split=f"test[:{n_eval}]")
-    if not skip_lora:
-        device = trainer.device
+    n_eval = int(CONFIG["gsm8k_eval_samples"])
+    gsm8k_acc = None
+    if n_eval > 0:
+        print(f"Stage: GSM8K eval on {n_eval} samples", flush=True)
+        test_raw = load_dataset("gsm8k", "main", split=f"test[:{n_eval}]")
+        if not skip_lora:
+            device = trainer.device
+        else:
+            device = next(model.parameters()).device
+
+        model.eval()
+        correct = 0
+        for example in test_raw:
+            prompt = f"Question: {example['question']}\nAnswer:"
+            inputs = tokenizer(
+                prompt, return_tensors="pt",
+                truncation=True, max_length=max_seq_len,
+            )
+            input_ids = inputs["input_ids"].to(device)
+            attn_mask = inputs["attention_mask"].to(device)
+
+            with torch.no_grad():
+                generated_ids = input_ids.clone()
+                gen_mask = attn_mask.clone()
+                for _ in range(int(CONFIG.get("max_generation_tokens", 64))):
+                    fwd = model(input_ids=generated_ids, attention_mask=gen_mask)
+                    next_tok = fwd["logits"][:, -1, :].argmax(dim=-1, keepdim=True)
+                    generated_ids = torch.cat([generated_ids, next_tok], dim=1)
+                    gen_mask = torch.cat([gen_mask, torch.ones_like(next_tok)], dim=1)
+                    mark_step(device)
+                    if next_tok.item() == tokenizer.eos_token_id:
+                        break
+
+            response = tokenizer.decode(
+                generated_ids[0][input_ids.shape[1]:].detach().cpu(),
+                skip_special_tokens=True,
+            )
+            pred_match = re.search(r"####\s*([-\d,\.]+)", response)
+            gold_match = re.search(r"####\s*([-\d,\.]+)", example["answer"])
+            if (pred_match and gold_match
+                    and pred_match.group(1).replace(",", "") == gold_match.group(1).replace(",", "")):
+                correct += 1
+
+        gsm8k_acc = correct / n_eval * 100
     else:
-        device = next(model.parameters()).device
-
-    model.eval()
-    correct = 0
-    for example in test_raw:
-        prompt = f"Question: {example['question']}\nAnswer:"
-        inputs = tokenizer(
-            prompt, return_tensors="pt",
-            truncation=True, max_length=max_seq_len,
-        )
-        input_ids = inputs["input_ids"].to(device)
-        attn_mask = inputs["attention_mask"].to(device)
-
-        with torch.no_grad():
-            generated_ids = input_ids.clone()
-            gen_mask = attn_mask.clone()
-            for _ in range(64):
-                fwd = model(input_ids=generated_ids, attention_mask=gen_mask)
-                next_tok = fwd["logits"][:, -1, :].argmax(dim=-1, keepdim=True)
-                generated_ids = torch.cat([generated_ids, next_tok], dim=1)
-                gen_mask = torch.cat([gen_mask, torch.ones_like(next_tok)], dim=1)
-                if next_tok.item() == tokenizer.eos_token_id:
-                    break
-
-        response = tokenizer.decode(
-            generated_ids[0][input_ids.shape[1]:],
-            skip_special_tokens=True,
-        )
-        pred_match = re.search(r"####\s*([-\d,\.]+)", response)
-        gold_match = re.search(r"####\s*([-\d,\.]+)", example["answer"])
-        if (pred_match and gold_match
-                and pred_match.group(1).replace(",", "") == gold_match.group(1).replace(",", "")):
-            correct += 1
-
-    gsm8k_acc = correct / n_eval * 100
+        print("Stage: GSM8K eval skipped for screening run", flush=True)
 
     # -- Print results (agent extracts these lines) ---------------------------
     print(f"val_loss: {val_loss:.6f}")
-    print(f"gsm8k_acc: {gsm8k_acc:.2f}")
+    if gsm8k_acc is not None:
+        print(f"gsm8k_acc: {gsm8k_acc:.2f}")
 
     # Cleanup
     del model, base_model

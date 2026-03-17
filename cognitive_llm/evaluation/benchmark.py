@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Benchmark evaluation runner for GSM8K, ARC-Challenge, MATH, and HellaSwag.
 

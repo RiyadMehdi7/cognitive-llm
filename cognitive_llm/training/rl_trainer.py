@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 PPO trainer for the RL Gating Policy (Block 5) and Surprise Gate thresholds (Block 1).
 

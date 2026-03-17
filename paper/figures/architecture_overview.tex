@@ -1,0 +1,169 @@
+\documentclass[border=8pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, calc, fit, backgrounds, shadows.blur}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+\definecolor{screened}{HTML}{d4edda}
+\definecolor{screenedEdge}{HTML}{3a7d34}
+\definecolor{deferred}{HTML}{f8d7c4}
+\definecolor{deferredEdge}{HTML}{c0652a}
+\definecolor{core}{HTML}{d6e4f5}
+\definecolor{coreEdge}{HTML}{5573a3}
+\definecolor{neutral}{HTML}{e9ecef}
+\definecolor{neutralEdge}{HTML}{8a8a8a}
+\definecolor{layerbg}{HTML}{f5f7fa}
+\definecolor{annot}{HTML}{5a5a5a}
+
+\tikzset{
+  base/.style={
+    draw, rounded corners=3pt, minimum height=9mm,
+    font=\sffamily\small, align=center, inner sep=5pt,
+    blur shadow={shadow blur steps=4, shadow xshift=0.4pt,
+                 shadow yshift=-0.6pt, shadow opacity=18},
+  },
+  screened box/.style={
+    base, fill=screened, draw=screenedEdge, line width=0.8pt,
+  },
+  deferred box/.style={
+    base, fill=deferred, draw=deferredEdge, line width=0.8pt,
+    dashed, dash pattern=on 4pt off 2pt,
+  },
+  core box/.style={
+    base, fill=core, draw=coreEdge, line width=0.8pt,
+  },
+  neutral box/.style={
+    base, fill=neutral, draw=neutralEdge, line width=0.7pt,
+  },
+  layer box/.style={
+    draw=neutralEdge!60, rounded corners=2pt, fill=white,
+    minimum width=28mm, minimum height=7mm,
+    font=\sffamily\scriptsize, inner sep=3pt, line width=0.5pt,
+  },
+  mainflow/.style={
+    -{Stealth[length=5pt, width=4pt]}, line width=1pt,
+    color=black!65,
+  },
+  sideflow/.style={
+    -{Stealth[length=4.5pt, width=3.5pt]}, line width=0.7pt,
+  },
+  annot text/.style={
+    font=\sffamily\scriptsize\itshape, text=annot,
+  },
+}
+
+\begin{document}
+\begin{tikzpicture}[node distance=11mm and 18mm]
+
+% ═══════════════════════════════════════════
+%  Main vertical pipeline (centre column)
+% ═══════════════════════════════════════════
+
+\node[neutral box, minimum width=26mm] (input) {Input tokens};
+
+\node[core box, below=of input, minimum width=38mm] (embed)
+  {Token Embeddings};
+
+\node[screened box, below=of embed, minimum width=38mm] (b1)
+  {B1\;\textbf{SurpriseGate}};
+
+% --- Transformer stack (outer container) ---
+\node[below=13mm of b1] (stack anchor) {};
+
+\node[layer box] (layerN) at (stack anchor) {Layer $N$};
+\node[below=4mm of layerN, font=\large, text=neutralEdge] (dots) {$\vdots$};
+\node[layer box, below=4mm of dots] (layer1) {Layer 1};
+
+\begin{scope}[on background layer]
+  \node[fit=(layerN)(layer1), inner sep=7pt,
+        fill=core!30, draw=coreEdge!50, rounded corners=5pt,
+        line width=0.6pt] (stack) {};
+\end{scope}
+\node[above=1pt of stack.north, anchor=south,
+      font=\sffamily\scriptsize\itshape, text=coreEdge]
+  {Transformer Stack\; (32 layers)};
+
+\node[screened box, below=13mm of stack, minimum width=42mm] (b2r)
+  {B2\;\textbf{EpisodicMemory}\;(read)};
+
+\node[core box, below=of b2r, minimum width=26mm] (lmhead)
+  {LM Head};
+
+% Main arrows
+\draw[mainflow] (input)  -- (embed);
+\draw[mainflow] (embed)  -- (b1);
+\draw[mainflow] (b1)     -- (stack);
+\draw[mainflow] (stack)  -- (b2r);
+\draw[mainflow] (b2r)    -- (lmhead);
+
+% ═══════════════════════════════════════════
+%  Left side: B2 write
+% ═══════════════════════════════════════════
+
+\node[screened box, left=22mm of stack, minimum width=30mm,
+      yshift=10mm] (b2w)
+  {B2\;\textbf{EpisodicMemory}\\(write)};
+
+% branch arrow from between B1 and stack
+\coordinate (branch) at ($(b1.south)!0.5!(stack.north)$);
+\draw[sideflow, color=screenedEdge]
+  (branch) -| (b2w.north);
+
+\node[annot text, below=2pt of b2w.south] {64-slot memory bank};
+
+% ═══════════════════════════════════════════
+%  Right side: B3, B4, B6 (attached to stack)
+% ═══════════════════════════════════════════
+
+\node[screened box, right=20mm of layerN, minimum width=32mm] (b3)
+  {B3\;\textbf{PerLayerCritic}};
+\draw[sideflow, color=screenedEdge]
+  (layerN.east) -- (b3.west);
+\node[annot text, right=3pt of b3.east] {every 4th layer};
+
+\node[deferred box, right=20mm of dots, minimum width=32mm] (b4)
+  {B4\;\textbf{PredictiveCoding}};
+\draw[sideflow, color=deferredEdge, dashed]
+  (dots.east) -- (b4.west);
+\node[annot text, right=3pt of b4.east, text=deferredEdge] {deferred};
+
+\node[screened box, right=20mm of layer1, minimum width=32mm] (b6)
+  {B6\;\textbf{HomeostaticNorm}};
+\draw[sideflow, color=screenedEdge]
+  (layer1.east) -- (b6.west);
+\node[annot text, right=3pt of b6.east] {wraps all norms};
+
+% ═══════════════════════════════════════════
+%  Right side: B5 (deferred, below stack)
+% ═══════════════════════════════════════════
+
+\node[deferred box, minimum width=32mm] (b5)
+  at (b6 |- b2r) {B5\;\textbf{RLGatingPolicy}};
+\node[annot text, below=2pt of b5.south, text=deferredEdge]
+  {after stack (deferred)};
+
+% ═══════════════════════════════════════════
+%  Legend
+% ═══════════════════════════════════════════
+
+\coordinate (leg) at ($(input.north west)+(-5mm, 6mm)$);
+
+\node[screened box, minimum width=5mm, minimum height=5mm,
+      inner sep=0pt, blur shadow=none] (ls) at (leg) {};
+\node[right=2pt of ls, font=\sffamily\scriptsize]
+  {Screened (Phase 1)};
+
+\node[deferred box, minimum width=5mm, minimum height=5mm,
+      inner sep=0pt, blur shadow=none,
+      right=28mm of ls] (ld) {};
+\node[right=2pt of ld, font=\sffamily\scriptsize]
+  {Deferred (Phase 2)};
+
+\node[core box, minimum width=5mm, minimum height=5mm,
+      inner sep=0pt, blur shadow=none,
+      right=28mm of ld] (lc) {};
+\node[right=2pt of lc, font=\sffamily\scriptsize]
+  {Base transformer};
+
+\end{tikzpicture}
+\end{document}

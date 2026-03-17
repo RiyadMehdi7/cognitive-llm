@@ -1,0 +1,33 @@
+model_id: HuggingFaceTB/SmolLM-360M
+quantization: none
+
+# Block flags (toggle for ablation)
+use_block1: true              # SurpriseGate
+use_block2: false             # EpisodicMemory
+use_block3: false             # PerLayerCritic
+use_block4: false             # PredictiveCoding (Phase 2)
+use_block5: false             # RLGatingPolicy (Phase 2)
+use_block6: true              # HomeostaticNorm (always on with other blocks)
+
+training:
+  batch_size: 2
+  gradient_accumulation: 8    # Effective batch = 16
+  learning_rate: 2e-4
+  warmup_steps: 100
+  max_steps: 500
+  max_seq_len: 512
+  fp16: false
+  bf16: true
+  gradient_checkpointing: true
+  max_grad_norm: 1.0
+  save_every_n_steps: 500
+  eval_every_n_steps: 100
+  checkpoint_dir: ./checkpoints
+  use_wandb: true
+
+dataset: gsm8k
+
+lambda_config:
+  surprise: 0.01
+  critic: 0.1
+  predictive: 0.05

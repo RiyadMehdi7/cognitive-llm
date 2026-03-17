@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Block 1: Meta-Surprise Gate — adaptive compute routing.
 

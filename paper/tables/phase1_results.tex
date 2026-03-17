@@ -1,0 +1,28 @@
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lrr}
+\toprule
+Configuration & Val.\ loss & Reduction (\%) \\
+\midrule
+\textbf{B1+B2+B6} & \textbf{2.718} & \textbf{56.85} \\
+\textbf{B2+B6} & \textbf{2.722} & \textbf{56.79} \\
+B6 & 2.743 & 56.45 \\
+B1+B6 & 2.990 & 52.53 \\
+\midrule
+B1+B2+B3+B6 & 3.451 & 45.21 \\
+B2+B3+B6 & 3.493 & 44.54 \\
+B3+B6 & 3.572 & 43.29 \\
+\midrule
+LoRA only (baseline) & 6.299 & --- \\
+\bottomrule
+\end{tabular}
+\caption{Phase-1 screening results, sorted by validation loss (best first).
+Base model: SmolLM-360M (frozen) + LoRA rank~16.
+Metric: validation loss on a 64-example GSM8K subset after 100 AdamW steps on
+TPU~v4 (lower is better).
+Reduction is relative to the LoRA-only baseline.
+Bold marks the top-tier configurations (within 0.01 of each other).
+All results are single runs without confidence intervals.}
+\label{tab:phase1-results}
+\end{table}

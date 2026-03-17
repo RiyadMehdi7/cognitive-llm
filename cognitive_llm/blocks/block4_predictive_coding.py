@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Block 4: Predictive Coding — inter-layer prediction and error propagation.
 

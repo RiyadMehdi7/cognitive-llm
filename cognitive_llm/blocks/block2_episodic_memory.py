@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Block 2: Episodic Memory — online key-value buffer.
 

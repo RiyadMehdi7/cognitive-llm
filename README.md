@@ -1,74 +1,84 @@
-# Cognitive LLM Architecture
+# Cognitive LLM
 
-A transformer-based language model enhanced with six neuroscience-inspired architectural blocks. This research project demonstrates that a small model (3B parameters) with cognitive additions can significantly outperform larger vanilla models on reasoning benchmarks.
+Neuroscience-inspired architectural blocks for small language models. We augment a frozen [SmolLM-360M](https://huggingface.co/HuggingFaceTB/SmolLM-360M) backbone with six cognitive block families and run controlled ablation experiments to measure their individual and combined effects on reasoning performance.
 
-## Research Hypothesis
+**Paper:** [Memory Dominates Routing: A Controlled Screening of Neuroscience-Inspired Transformer Blocks](paper/main.pdf)
 
-A small LLM (SmolLM3 3B or OLMo 3 7B) augmented with adaptive compute routing, online episodic memory, distributed RL credit assignment, predictive coding, learned gating, and homeostatic regulation will achieve reasoning performance competitive with models 3-5x larger — while being more computationally efficient.
+## Architecture
 
-## Cognitive Blocks
+<p align="center">
+  <img src="paper/figures/architecture_overview.png" width="680" alt="Cognitive LLM architecture overview"/>
+</p>
 
-| Block | Name | Position | Purpose |
-|-------|------|----------|---------|
-| B1 | Meta-Surprise Gate | After embedding, before Layer 1 | Adaptive compute routing based on token surprise |
-| B2 | Episodic Memory | Before/after transformer stack | Online key-value working memory buffer |
-| B3 | Per-Layer Critic | Every 4th transformer layer | Distributed value estimation for RL credit assignment |
-| B4 | Predictive Coding | Between transformer layers | Inter-layer prediction and error propagation (Phase 2) |
-| B5 | RL Gating Policy | After transformer stack | Learned orchestration of all cognitive blocks |
-| B6 | Homeostatic Norm | Replaces LayerNorm | Activation stability via EMA-tracked running statistics |
+Six plug-in blocks wrap or augment a frozen transformer backbone. Each block is independently toggleable for clean ablation:
 
-## Target Benchmarks
+| Block | Name | Inspiration | Role |
+|:-----:|------|-------------|------|
+| B1 | **SurpriseGate** | Predictive processing (Friston) | Gates hidden states by prediction-error magnitude |
+| B2 | **EpisodicMemory** | Hippocampal rapid learning (Kumaran et al.) | Online key-value memory bank for episodic retrieval |
+| B3 | **PerLayerCritic** | Prefrontal value signals (Wang) | Intermediate critic for TD-style training signal |
+| B4 | **PredictiveCoding** | Visual cortex (Rao & Ballard) | Top-down error correction between layers |
+| B5 | **RLGatingPolicy** | Meta-RL (Hassabis et al.) | Learned policy for block activation routing |
+| B6 | **HomeostaticNorm** | Homeostatic plasticity | EMA-based activation stabilization |
 
-| Benchmark | Metric | Target Delta |
-|-----------|--------|-------------|
-| GSM8K | Accuracy | +5-10% over baseline |
-| ARC-Challenge | Accuracy | +3-8% over baseline |
-| MATH | Pass@1 | +3-6% over baseline |
-| HellaSwag | Accuracy | Maintained or improved |
+## Results
+
+Phase 1 screening on GSM8K (SmolLM-360M + LoRA, 8 configurations):
+
+<p align="center">
+  <img src="paper/figures/phase1_val_loss_ranking.png" width="780" alt="Phase 1 validation loss ranking"/>
+</p>
+
+| Rank | Configuration | Val Loss | vs Baseline |
+|:----:|---------------|:--------:|:-----------:|
+| 1 | B1 + B2 + B6 | 2.718 | **-56.8%** |
+| 2 | B2 + B6 | 2.722 | **-56.8%** |
+| 3 | B6 only | 2.743 | **-56.5%** |
+| — | Baseline (LoRA only) | 6.299 | — |
+
+**Key finding:** HomeostaticNorm (B6) alone accounts for most of the improvement. EpisodicMemory (B2) adds a small marginal gain. The PerLayerCritic (B3) consistently *hurts* performance, suggesting that intermediate critic signals interfere with the base model's learned representations.
+
+## Repository Structure
+
+```
+cognitive_llm/
+├── blocks/             Six cognitive block implementations (nn.Module)
+├── models/             CognitiveModel wrapper with toggleable block composition
+├── training/           Training loop, RL trainer, reward shaping, device abstraction
+└── evaluation/         Benchmark runners, ablation framework
+configs/                Experiment configuration (YAML)
+tests/                  Unit tests for every block and the model wrapper
+notebooks/              Phase 1 ablation notebook
+paper/                  LaTeX manuscript, figures, and frozen results
+train.py                Single-experiment entry point
+```
 
 ## Quick Start
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-pip install -r requirements_tpu.txt  # TPU/XLA only
+python train.py
+```
 
-# Run unit tests
+Run the test suite:
+
+```bash
 pytest tests/ -v
-
-# Phase 1: Colab debug (see notebooks/colab_debug.ipynb)
-# Phase 2: Kaggle ablation (see notebooks/kaggle_ablation.ipynb)
 ```
 
-## Project Structure
+Reproduce the paper figures:
 
-```
-cognitive_llm/
-├── blocks/              # Six cognitive architecture blocks
-├── models/              # CognitiveModel wrapper
-├── training/            # Training loops, PPO, rewards
-├── evaluation/          # Benchmarks, ablation runner
-notebooks/               # Colab & Kaggle notebooks
-configs/                 # YAML configs per hardware phase
-tests/                   # Unit tests per block
+```bash
+python paper/scripts/make_figures.py
 ```
 
-## Hardware Phases
+## Design Principles
 
-1. **Debug** — Colab T4 16GB, SmolLM3 3B 4-bit
-2. **Ablation** — Kaggle A100 30h/wk, SmolLM3 3B bf16
-3. **Main results** — TPU v3/v4 (TRC), OLMo 3 7B
-4. **Scaling** — TPU v4 (TRC), OLMo 3 32B
-
-For TPU runs, set `training.device: xla` in the YAML passed to
-`CognitiveTrainer`. The trainer now handles XLA optimizer stepping,
-dataloader wrapping, and checkpoint saves when `torch-xla` is installed.
-
-## Base Models
-
-- **SmolLM3 3B**: `HuggingFaceTB/SmolLM3-3B` (Apache 2.0)
-- **OLMo 3 7B**: `allenai/OLMo-3-7B` (Apache 2.0)
+- **Frozen backbone** — all blocks are additions on top of a LoRA-adapted base; original weights are never modified
+- **Toggleable blocks** — each block is controlled by a config flag (`use_block1`, ..., `use_block6`) for clean ablation
+- **Stability first** — HomeostaticNorm (B6) is always enabled alongside other blocks to prevent training divergence
+- **Architecture-agnostic** — CognitiveModel auto-detects layer structure and works across SmolLM, OLMo, and LLaMA families
 
 ## License
 
-Apache 2.0
+[Apache 2.0](LICENSE)

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Block 6: Homeostatic Regulation — drop-in normalization wrapper.
 
@@ -9,8 +11,6 @@ Purpose: Tracks activation history via EMA. Dynamically adjusts gain/bias
 Reference: Homeostatic plasticity in biological neural networks maintains
            stable activity levels despite perturbations.
 """
-
-from __future__ import annotations
 
 import copy
 

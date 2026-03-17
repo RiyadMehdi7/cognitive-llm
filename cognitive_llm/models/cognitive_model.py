@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Cognitive Model Wrapper — injects cognitive blocks into a base HuggingFace model.
 

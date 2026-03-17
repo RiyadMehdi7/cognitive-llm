@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Reward functions for RL training of cognitive blocks.
 

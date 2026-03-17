@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Custom training loop for Cognitive LLM with multi-loss optimization.
 

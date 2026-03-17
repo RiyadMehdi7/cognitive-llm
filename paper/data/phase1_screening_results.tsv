@@ -1,0 +1,9 @@
+exp_id	timestamp	hypothesis	val_loss	gsm8k_acc	baseline_delta_pct	is_improvement	anomaly_score	verdict	run_minutes	notes
+EXP_000	2026-03-17 00:27:36	Baseline: LoRA only	6.298548	n/a	0.00	False	0.0	ok	4.2	median from 1 baseline runs
+EXP_001	2026-03-17 00:33:25	B6 only: HomeostaticNorm	2.742973	n/a	56.45	True	0.0	ok	5.8	
+EXP_002	2026-03-17 00:53:19	B2+B6: EpisodicMemory + HomeostaticNorm	2.721915	n/a	56.79	True	0.0	ok	5.9	
+EXP_003	2026-03-17 00:59:21	B1+B6: SurpriseGate + HomeostaticNorm	2.989806	n/a	52.53	False	0.0	ok	6.0	
+EXP_004	2026-03-17 01:05:23	B3+B6: PerLayerCritic (TD) + HomeostaticNorm	3.571701	n/a	43.29	False	0.0	ok	6.0	
+EXP_005	2026-03-17 01:11:35	B1+B2+B6	2.717516	n/a	56.85	True	0.0	ok	6.2	
+EXP_006	2026-03-17 01:17:45	B2+B3+B6	3.492990	n/a	44.54	False	0.0	ok	6.2	
+EXP_007	2026-03-17 01:24:11	B1+B2+B3+B6	3.450692	n/a	45.21	False	0.0	ok	6.4	

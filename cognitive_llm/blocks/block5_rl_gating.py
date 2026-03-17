@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Block 5: RL Gating Policy — learned orchestration of cognitive blocks.
 

@@ -1,4 +1,0 @@
-torch-xla>=2.3.0
-cloud-tpu-client
-jax>=0.4.25
-flax>=0.8.0

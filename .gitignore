@@ -15,11 +15,17 @@ venv/
 env/
 *.env
 
-# Checkpoints & results
+# Checkpoints & experiment artifacts
 checkpoints/
-results/
-ablation_results/
 wandb/
+experiments/
+results.tsv
+lab_notebook.md
+session_state.json
+morning_report.md
+draft_paper.md
+notebook_archive.md
+context_compact_*.log
 
 # IDE
 .idea/
@@ -31,6 +37,7 @@ wandb/
 # OS
 .DS_Store
 Thumbs.db
+FETCH_HEAD
 
 # Jupyter
 .ipynb_checkpoints/
@@ -40,13 +47,32 @@ Thumbs.db
 *.safetensors
 *.gguf
 
-# Research artifacts
+# LaTeX build artifacts
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
+paper/*.xdv
+
+# Internal / working files (kept locally, hidden from repo)
+CLAUDE.md
+agent.py
+cognitive_llm_spec.docx
+program.md
+requirements_tpu.txt
+configs/olmo3_tpu.yaml
+configs/smollm3_full.yaml
+configs/smollm3_vastai.yaml
+configs/smollm3_tpu_phase1.yaml
+notebooks/colab_debug.ipynb
+notebooks/kaggle_ablation.ipynb
+scripts/remote_setup.sh
+scripts/run_remote.sh
+scripts/tpu_run.sh
+scripts/tpu_setup.sh
 papers/
-session_state.json
-morning_report.md
-draft_paper.md
-lab_notebook.md
-results.tsv
-notebook_archive.md
-context_compact_*.log
-experiments/
+.claude/

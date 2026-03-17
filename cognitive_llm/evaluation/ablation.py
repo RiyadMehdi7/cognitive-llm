@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Ablation study runner — systematically enables/disables blocks to measure contribution.
 
