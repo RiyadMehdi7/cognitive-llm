@@ -195,8 +195,8 @@ def make_architecture_figure() -> None:
     # Stack label — placed inside the container, below the top edge
     ax.text(C, y_stack_top - 0.08, "Transformer Stack (32 layers)",
             ha="center", va="top",
-            fontsize=8.5, color=_CORE_EDGE, fontstyle="italic",
-            fontweight="medium",
+            fontsize=10, color="#37474f", fontstyle="normal",
+            fontweight="bold",
             bbox=dict(facecolor=_STACK_BG, edgecolor="none", pad=1.5))
 
     # Internal layer boxes
