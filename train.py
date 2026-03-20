@@ -181,6 +181,10 @@ def _load_base_model(model_id, runtime_device, compute_dtype):
         "trust_remote_code": True,
     }
 
+    # XLA/TPU requires eager attention (no sliding window cache) and no KV cache
+    if runtime_device.type == "xla":
+        model_kwargs["attn_implementation"] = "eager"
+
     if quantization in {"4bit", "4-bit"}:
         if runtime_device.type != "cuda":
             raise RuntimeError(
@@ -208,11 +212,13 @@ def _load_base_model(model_id, runtime_device, compute_dtype):
 
     model = AutoModelForCausalLM.from_pretrained(model_id, **model_kwargs)
 
+    # Always disable KV cache during training (required for XLA, saves memory elsewhere)
+    if hasattr(model.config, "use_cache"):
+        model.config.use_cache = False
+
     if use_gradient_checkpointing:
         if hasattr(model, "gradient_checkpointing_enable"):
             model.gradient_checkpointing_enable()
-        if hasattr(model.config, "use_cache"):
-            model.config.use_cache = False
 
     return model
 
