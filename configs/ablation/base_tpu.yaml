@@ -1,6 +1,6 @@
 # Base TPU config — all ablation configs inherit from this via train.py
 # Do not run this directly; use the specific ablation configs.
-model_id: allenai/Olmo-3-1025-7B
+model_id: HuggingFaceTB/SmolLM2-1.7B
 device: xla
 quantization: none
 dtype: bf16

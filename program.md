@@ -1,7 +1,7 @@
 ---
 ## GOAL
 Validate which cognitive block combinations improve reasoning benchmarks
-on OLMo 3 7B (allenai/Olmo-3-1025-7B) using TPU v3/v4 (TRC quota).
+on OLMo 3 7B (HuggingFaceTB/SmolLM2-1.7B) using TPU v3/v4 (TRC quota).
 Phase 1 screening on SmolLM-360M identified B6 (HomeostaticNorm) as the
 dominant contributor. Phase 2 must confirm this on a 7B model and produce
 paper-quality ablation results across multiple benchmarks.
@@ -11,7 +11,7 @@ file: train.py
 command: python train.py --config configs/ablation/<name>.yaml --no_wandb
 time_budget_minutes: 60
 hardware: TPU v3/v4 (TRC)
-model: allenai/Olmo-3-1025-7B
+model: HuggingFaceTB/SmolLM2-1.7B
 
 ## METRIC
 primary: val_loss
@@ -103,7 +103,7 @@ Expected behavior at 7B scale:
 
 ## NOTES
 Phase: 2 — TPU v3/v4 (TRC)
-Model: allenai/Olmo-3-1025-7B (Apache 2.0)
+Model: HuggingFaceTB/SmolLM2-1.7B (Apache 2.0)
 Baseline: not yet measured — first experiment on TPU
 Status: 61/61 unit tests passing, smoke test passing
 Block 3: DISABLED — Phase 1 showed it hurts performance

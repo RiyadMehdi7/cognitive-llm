@@ -1,5 +1,5 @@
 # EXP 01: Baseline — LoRA only, no cognitive blocks
-model_id: allenai/Olmo-3-1025-7B
+model_id: HuggingFaceTB/SmolLM2-1.7B
 device: xla
 quantization: none
 dtype: bf16
