@@ -15,6 +15,7 @@ Outputs:
     CRASH: <message>        (printed on any other exception)
 """
 
+import argparse
 import sys
 
 # -----------------------------------------------------------------------------
@@ -60,6 +61,65 @@ CONFIG = {
     "skip_lora": False,
 }
 # -----------------------------------------------------------------------------
+
+
+def _parse_args() -> argparse.Namespace:
+    """Parse CLI arguments and merge YAML config into CONFIG."""
+    parser = argparse.ArgumentParser(description="Cognitive LLM training script")
+    parser.add_argument("--config", type=str, default=None,
+                        help="Path to YAML config file (overrides CONFIG defaults)")
+    parser.add_argument("--max_train_samples", type=int, default=0,
+                        help="Limit training dataset size (0 = use all)")
+    parser.add_argument("--skip_entropy_init", action="store_true",
+                        help="Skip entropy-based weight initialization")
+    parser.add_argument("--no_wandb", action="store_true",
+                        help="Disable wandb logging")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility")
+    parser.add_argument("--run_name", type=str, default=None,
+                        help="Wandb run name (auto-generated if not set)")
+    parser.add_argument("--eval_benchmarks", action="store_true",
+                        help="Run lm-eval-harness benchmarks after training")
+    return parser.parse_args()
+
+
+def _apply_yaml_config(yaml_path: str) -> None:
+    """Load a YAML config file and merge into CONFIG."""
+    import yaml
+
+    with open(yaml_path) as f:
+        yaml_cfg = yaml.safe_load(f)
+
+    if yaml_cfg is None:
+        return
+
+    def _coerce_numeric(key, value):
+        """YAML safe_load parses '2e-4' as string; coerce to float if CONFIG expects a number."""
+        if isinstance(value, str) and key in CONFIG and isinstance(CONFIG[key], (int, float)):
+            try:
+                return type(CONFIG[key])(float(value))
+            except (ValueError, TypeError):
+                return value
+        return value
+
+    # Flatten nested 'training' and 'lambda_config' sections
+    training = yaml_cfg.pop("training", {}) or {}
+    lambda_cfg = yaml_cfg.pop("lambda_config", {}) or {}
+
+    # Map lambda_config keys to CONFIG's flat keys
+    for key, value in lambda_cfg.items():
+        flat_key = f"lambda_{key}"
+        CONFIG[flat_key] = _coerce_numeric(flat_key, value)
+
+    # Map training keys directly
+    for key, value in training.items():
+        CONFIG[key] = _coerce_numeric(key, value)
+
+    # Map top-level keys (model_id, device, use_block*, etc.)
+    for key, value in yaml_cfg.items():
+        if key == "dataset":
+            continue  # dataset is handled by the data loading logic
+        CONFIG[key] = _coerce_numeric(key, value)
 
 
 def _get_torch_dtype(dtype_name, runtime_device):
@@ -157,6 +217,25 @@ def _load_base_model(model_id, runtime_device, compute_dtype):
     return model
 
 
+def _set_seed(seed: int) -> None:
+    """Set all random seeds for reproducibility."""
+    import random
+
+    import numpy as np
+    import torch
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    try:
+        import torch_xla.core.xla_model as xm
+        xm.set_rng_state(seed)
+    except (ImportError, RuntimeError):
+        pass
+
+
 def _run_training() -> None:
     import gc
     import math
@@ -177,6 +256,11 @@ def _run_training() -> None:
     )
     from cognitive_llm.training.trainer import CognitiveTrainer
 
+    # -- Seed -----------------------------------------------------------------
+    seed = int(CONFIG.get("_seed", 42))
+    _set_seed(seed)
+    print(f"Seed: {seed}", flush=True)
+
     # -- Device / dtype -------------------------------------------------------
     runtime_device, compute_dtype = _resolve_runtime()
 
@@ -190,7 +274,11 @@ def _run_training() -> None:
     # -- Tokenize GSM8K train split -------------------------------------------
     max_seq_len = CONFIG["max_seq_len"]
     print("Stage: loading GSM8K train split", flush=True)
-    raw_train = load_dataset("gsm8k", "main", split="train")
+    max_train_samples = int(CONFIG.get("_max_train_samples", 0))
+    if max_train_samples > 0:
+        raw_train = load_dataset("gsm8k", "main", split=f"train[:{max_train_samples}]")
+    else:
+        raw_train = load_dataset("gsm8k", "main", split="train")
 
     def tokenize(examples):
         texts = [
@@ -307,9 +395,14 @@ def _run_training() -> None:
             "warmup_steps": CONFIG["warmup_steps"],
             "gradient_accumulation": CONFIG["gradient_accumulation"],
             "max_grad_norm": CONFIG["max_grad_norm"],
-            "eval_every_n_steps": CONFIG["max_steps"] + 1,
-            "save_every_n_steps": CONFIG["max_steps"] + 1,
-            "use_wandb": False,
+            "eval_every_n_steps": CONFIG.get("eval_every_n_steps", CONFIG["max_steps"] + 1),
+            "save_every_n_steps": CONFIG.get("save_every_n_steps", CONFIG["max_steps"] + 1),
+            "checkpoint_dir": CONFIG.get("checkpoint_dir", "./checkpoints"),
+            "use_wandb": CONFIG.get("use_wandb", False),
+            "wandb_group": CONFIG.get("wandb_group"),
+            "wandb_tags": CONFIG.get("wandb_tags"),
+            "run_name": CONFIG.get("_run_name"),
+            "seed": CONFIG.get("_seed", 42),
         }
 
         # -- Train ------------------------------------------------------------
@@ -388,6 +481,35 @@ def _run_training() -> None:
     if gsm8k_acc is not None:
         print(f"gsm8k_acc: {gsm8k_acc:.2f}")
 
+    # -- Benchmark eval (optional, via lm-eval-harness) -----------------------
+    if CONFIG.get("_eval_benchmarks", False):
+        print("Stage: running lm-eval-harness benchmarks", flush=True)
+        from cognitive_llm.evaluation.benchmark import BenchmarkRunner
+
+        # Save model for eval
+        checkpoint_dir = CONFIG.get("checkpoint_dir", "./checkpoints")
+        eval_model_path = f"{checkpoint_dir}/eval_model"
+        try:
+            model.base.save_pretrained(eval_model_path)
+            tokenizer.save_pretrained(eval_model_path)
+
+            runner = BenchmarkRunner(
+                model_path=eval_model_path,
+                output_dir=f"{checkpoint_dir}/benchmark_results",
+                device=str(runtime_device),
+                batch_size=CONFIG.get("batch_size", 8),
+            )
+            results = runner.run_all(
+                tasks=["gsm8k", "arc_challenge", "hellaswag", "mathqa"]
+            )
+            runner.print_results(results)
+
+            # Print in parseable format
+            for r in results:
+                print(f"bench_{r.task}_{r.metric}: {r.score:.4f}")
+        except Exception as exc:
+            print(f"Benchmark eval failed: {exc}", flush=True)
+
     # Cleanup
     del model, base_model
     gc.collect()
@@ -405,6 +527,25 @@ def _oom_safe_main() -> None:
 
 
 if __name__ == "__main__":
+    # Parse CLI args and merge YAML config before running
+    _cli_args = _parse_args()
+
+    if _cli_args.config:
+        _apply_yaml_config(_cli_args.config)
+
+    if _cli_args.no_wandb:
+        CONFIG["use_wandb"] = False
+
+    if _cli_args.max_train_samples > 0:
+        CONFIG["_max_train_samples"] = _cli_args.max_train_samples
+
+    CONFIG["_skip_entropy_init"] = _cli_args.skip_entropy_init
+    CONFIG["_seed"] = _cli_args.seed
+    CONFIG["_eval_benchmarks"] = _cli_args.eval_benchmarks
+
+    if _cli_args.run_name:
+        CONFIG["_run_name"] = _cli_args.run_name
+
     try:
         _oom_safe_main()
     except SystemExit:

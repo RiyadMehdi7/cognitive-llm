@@ -141,10 +141,27 @@ class CognitiveTrainer:
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         if self.use_wandb:
-            wandb.init(
-                project="cognitive-llm",
-                config={**self.config, **self.lambda_config},
-            )
+            wandb_kwargs = {
+                "project": "cognitive-llm",
+                "config": {**self.config, **self.lambda_config},
+            }
+            if self.config.get("wandb_group"):
+                wandb_kwargs["group"] = self.config["wandb_group"]
+            if self.config.get("wandb_tags"):
+                tags = self.config["wandb_tags"]
+                if isinstance(tags, str):
+                    tags = [t.strip() for t in tags.split(",")]
+                wandb_kwargs["tags"] = tags
+            if self.config.get("run_name"):
+                wandb_kwargs["name"] = self.config["run_name"]
+            elif self.config.get("seed"):
+                # Auto-generate run name from block config + seed
+                block_str = "".join(
+                    str(int(self.config.get(f"use_block{i}", False)))
+                    for i in range(1, 7)
+                )
+                wandb_kwargs["name"] = f"blocks_{block_str}_seed{self.config['seed']}"
+            wandb.init(**wandb_kwargs)
 
         accum_loss = 0.0
         accum_lm_loss = 0.0

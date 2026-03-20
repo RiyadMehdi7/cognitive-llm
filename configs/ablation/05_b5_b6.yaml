@@ -1,0 +1,37 @@
+# EXP 05: B5+B6 — RL Gating + HomeostaticNorm (explore new combo)
+model_id: allenai/OLMo-3-7B
+device: xla
+quantization: none
+dtype: bf16
+
+use_block1: false
+use_block2: false
+use_block3: false
+use_block4: false
+use_block5: true
+use_block6: true
+
+training:
+  batch_size: 16
+  gradient_accumulation: 4
+  learning_rate: 0.0001
+  warmup_steps: 500
+  max_steps: 10000
+  max_seq_len: 1024
+  gradient_checkpointing: true
+  max_grad_norm: 1.0
+  save_every_n_steps: 500
+  eval_every_n_steps: 500
+  checkpoint_dir: ./checkpoints
+  use_wandb: true
+  wandb_group: ablation_olmo3
+  wandb_tags: b5+b6,phase2
+
+dataset: gsm8k
+gsm8k_eval_samples: 200
+val_subset_size: 256
+
+lambda_config:
+  surprise: 0.01
+  critic: 0.1
+  predictive: 0.05

@@ -76,3 +76,5 @@ scripts/tpu_run.sh
 scripts/tpu_setup.sh
 papers/
 .claude/
+paper/linkedin_carousel.pdf
+paper/scripts/make_carousel.py
