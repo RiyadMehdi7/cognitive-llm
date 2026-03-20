@@ -61,7 +61,7 @@ fi
 
 echo "=== Cognitive LLM Phase 2 Ablation Sweep ==="
 echo "Hardware: TPU (TRC)"
-echo "Model: allenai/OLMo-3-7B"
+echo "Model: allenai/Olmo-3-1025-7B"
 echo "Seeds: $SEEDS"
 echo "Benchmark eval: ${EVAL_FLAG:-disabled}"
 echo "Configs:"

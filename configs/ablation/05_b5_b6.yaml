@@ -1,5 +1,5 @@
 # EXP 05: B5+B6 — RL Gating + HomeostaticNorm (explore new combo)
-model_id: allenai/OLMo-3-7B
+model_id: allenai/Olmo-3-1025-7B
 device: xla
 quantization: none
 dtype: bf16

@@ -1,5 +1,5 @@
 # EXP 04: B1+B2+B6 — Phase 1 best combo
-model_id: allenai/OLMo-3-7B
+model_id: allenai/Olmo-3-1025-7B
 device: xla
 quantization: none
 dtype: bf16
