@@ -40,7 +40,7 @@ Six plug-in blocks wrap or augment a frozen transformer backbone. Each block is 
 
 ## Results
 
-Phase 1 screening on GSM8K (SmolLM-360M + LoRA, 8 configurations):
+Phase 1 screening on GSM8K with SmolLM-360M + LoRA (8 configurations, ranked by validation loss):
 
 <p align="center">
   <img src="paper/figures/phase1_val_loss_ranking.png" width="780" alt="Phase 1 validation loss ranking"/>
