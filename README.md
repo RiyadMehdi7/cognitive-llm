@@ -24,7 +24,7 @@
 ## Architecture
 
 <p align="center">
-  <img src="assets/readme/architecture-overview.svg" width="980" alt="Clean overview of the Cognitive LLM architecture with the frozen transformer backbone in the center and six toggleable cognitive blocks arranged around it"/>
+  <img src="assets/readme/architecture-overview-d2.svg" width="980" alt="Clean overview of the Cognitive LLM architecture with the frozen transformer backbone in the center and six toggleable cognitive blocks arranged around it"/>
 </p>
 
 Six plug-in blocks wrap or augment a frozen transformer backbone. Each block is independently toggleable so the architecture stays interpretable during ablation runs.
