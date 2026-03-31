@@ -1,0 +1,131 @@
+<svg width="1200" height="980" viewBox="0 0 1200 980" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="120" y1="40" x2="1080" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#EEF4FF"/>
+    </linearGradient>
+    <linearGradient id="stack" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#E7EEF9"/>
+      <stop offset="1" stop-color="#D8E4F5"/>
+    </linearGradient>
+    <linearGradient id="active" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#EEF8D9"/>
+      <stop offset="1" stop-color="#D8EEAE"/>
+    </linearGradient>
+    <linearGradient id="backbone" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#EDF3FF"/>
+      <stop offset="1" stop-color="#D8E6FF"/>
+    </linearGradient>
+    <linearGradient id="deferred" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFF0E6"/>
+      <stop offset="1" stop-color="#FFE2D1"/>
+    </linearGradient>
+    <filter id="shadow" x="-20" y="-20" width="1240" height="1020" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#213047" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10V0Z" fill="#4E6E97"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10V0Z" fill="#6E9C43"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10V0Z" fill="#D57B4A"/>
+    </marker>
+    <style>
+      .title { font: 700 30px 'Segoe UI', Arial, sans-serif; fill: #18212F; }
+      .subtitle { font: 500 16px 'Segoe UI', Arial, sans-serif; fill: #526173; }
+      .label { font: 700 16px 'Segoe UI', Arial, sans-serif; fill: #1E2A39; }
+      .copy { font: 500 15px 'Segoe UI', Arial, sans-serif; fill: #4C5A69; }
+      .small { font: 600 13px 'Segoe UI', Arial, sans-serif; fill: #6B7887; }
+      .pill { font: 700 13px 'Segoe UI', Arial, sans-serif; fill: #314055; }
+      .stackTitle { font: 700 24px 'Segoe UI', Arial, sans-serif; fill: #26384B; }
+      .stackLabel { font: 600 17px 'Segoe UI', Arial, sans-serif; fill: #3D4B5B; }
+      .blockId { font: 800 24px 'Segoe UI', Arial, sans-serif; fill: #2F4C1F; }
+      .blockText { font: 700 26px 'Segoe UI', Arial, sans-serif; fill: #263425; }
+      .deferredId { font: 800 24px 'Segoe UI', Arial, sans-serif; fill: #B4602E; }
+      .deferredText { font: 700 24px 'Segoe UI', Arial, sans-serif; fill: #6C3C20; }
+      .phaseText { font: 700 14px 'Segoe UI', Arial, sans-serif; fill: #7A8797; letter-spacing: 0.04em; }
+    </style>
+  </defs>
+
+  <rect x="26" y="26" width="1148" height="928" rx="32" fill="url(#bg)" filter="url(#shadow)"/>
+
+  <text x="70" y="92" class="title">Cognitive LLM block map</text>
+  <text x="70" y="122" class="subtitle">A frozen transformer backbone augmented with toggleable neuroscience-inspired modules for controlled ablation studies.</text>
+
+  <rect x="820" y="64" width="122" height="36" rx="18" fill="#DFF0BF" stroke="#82AA50"/>
+  <text x="881" y="87" text-anchor="middle" class="pill">Phase 1 active</text>
+  <rect x="955" y="64" width="122" height="36" rx="18" fill="#FFE7DA" stroke="#E48A55" stroke-dasharray="6 6"/>
+  <text x="1016" y="87" text-anchor="middle" class="pill">Deferred</text>
+  <rect x="1090" y="64" width="60" height="36" rx="18" fill="#DCE8FF" stroke="#7598D2"/>
+  <text x="1120" y="87" text-anchor="middle" class="pill">Core</text>
+
+  <rect x="474" y="150" width="252" height="66" rx="16" fill="#F7F9FC" stroke="#AEB9C8" stroke-width="2"/>
+  <text x="600" y="191" text-anchor="middle" class="label">Input tokens</text>
+  <line x1="600" y1="216" x2="600" y2="258" stroke="#4E6E97" stroke-width="4" marker-end="url(#arrowBlue)"/>
+
+  <rect x="432" y="264" width="336" height="86" rx="18" fill="url(#backbone)" stroke="#6F96D6" stroke-width="2.5"/>
+  <text x="600" y="316" text-anchor="middle" class="label">Token embeddings</text>
+  <line x1="600" y1="350" x2="600" y2="392" stroke="#4E6E97" stroke-width="4" marker-end="url(#arrowBlue)"/>
+
+  <rect x="392" y="398" width="416" height="88" rx="18" fill="url(#active)" stroke="#7AA54B" stroke-width="2.5"/>
+  <text x="456" y="451" class="blockId">B1</text>
+  <text x="600" y="452" text-anchor="middle" class="blockText">SurpriseGate</text>
+  <text x="600" y="478" text-anchor="middle" class="small">prediction-error gating before the stack</text>
+  <line x1="600" y1="486" x2="600" y2="530" stroke="#4E6E97" stroke-width="4" marker-end="url(#arrowBlue)"/>
+
+  <rect x="388" y="532" width="424" height="198" rx="24" fill="url(#stack)" stroke="#7295C9" stroke-width="2.5"/>
+  <text x="600" y="578" text-anchor="middle" class="stackTitle">Transformer stack</text>
+  <text x="600" y="606" text-anchor="middle" class="phaseText">32 frozen decoder layers + LoRA adaptation</text>
+  <rect x="488" y="628" width="224" height="48" rx="12" fill="#F8FBFF" stroke="#B8C6D8"/>
+  <text x="600" y="659" text-anchor="middle" class="stackLabel">Layer N</text>
+  <text x="600" y="690" text-anchor="middle" class="stackLabel">⋮</text>
+  <rect x="488" y="704" width="224" height="48" rx="12" fill="#F8FBFF" stroke="#B8C6D8"/>
+  <text x="600" y="735" text-anchor="middle" class="stackLabel">Layer 1</text>
+
+  <rect x="88" y="548" width="244" height="96" rx="18" fill="url(#active)" stroke="#7AA54B" stroke-width="2.5"/>
+  <text x="130" y="606" class="blockId">B2</text>
+  <text x="234" y="604" text-anchor="middle" class="blockText">EpisodicMemory</text>
+  <text x="234" y="631" text-anchor="middle" class="small">64-slot write buffer for online memory</text>
+  <path d="M332 592C358 592 368 592 388 592" stroke="#6E9C43" stroke-width="4" marker-end="url(#arrowGreen)"/>
+
+  <line x1="600" y1="730" x2="600" y2="744" stroke="#4E6E97" stroke-width="4" marker-end="url(#arrowBlue)"/>
+  <rect x="390" y="748" width="420" height="88" rx="18" fill="url(#active)" stroke="#7AA54B" stroke-width="2.5"/>
+  <text x="454" y="801" class="blockId">B2</text>
+  <text x="600" y="802" text-anchor="middle" class="blockText">EpisodicMemory</text>
+  <text x="600" y="828" text-anchor="middle" class="small">read path augments representations before decoding</text>
+
+  <line x1="600" y1="836" x2="600" y2="874" stroke="#4E6E97" stroke-width="4" marker-end="url(#arrowBlue)"/>
+  <rect x="470" y="882" width="260" height="72" rx="16" fill="url(#backbone)" stroke="#6F96D6" stroke-width="2.5"/>
+  <text x="600" y="926" text-anchor="middle" class="label">LM head</text>
+
+  <rect x="878" y="528" width="252" height="92" rx="18" fill="url(#active)" stroke="#7AA54B" stroke-width="2.5"/>
+  <text x="920" y="584" class="blockId">B3</text>
+  <text x="1022" y="582" text-anchor="middle" class="blockText">PerLayerCritic</text>
+  <text x="1022" y="607" text-anchor="middle" class="small">intermediate TD-style signal</text>
+  <path d="M812 594C846 594 850 594 878 594" stroke="#6E9C43" stroke-width="4" marker-end="url(#arrowGreen)"/>
+  <text x="958" y="642" class="small">used every 4th layer in experiments</text>
+
+  <rect x="878" y="626" width="252" height="92" rx="18" fill="url(#deferred)" stroke="#E48A55" stroke-width="2.5" stroke-dasharray="9 7"/>
+  <text x="920" y="682" class="deferredId">B4</text>
+  <text x="1022" y="680" text-anchor="middle" class="deferredText">PredictiveCoding</text>
+  <text x="1022" y="705" text-anchor="middle" class="small">top-down corrective path, deferred to Phase 3</text>
+  <path d="M812 672C846 672 850 672 878 672" stroke="#D57B4A" stroke-width="4" stroke-dasharray="8 7" marker-end="url(#arrowOrange)"/>
+
+  <rect x="878" y="724" width="252" height="92" rx="18" fill="url(#active)" stroke="#7AA54B" stroke-width="2.5"/>
+  <text x="920" y="780" class="blockId">B6</text>
+  <text x="1022" y="778" text-anchor="middle" class="blockText">HomeostaticNorm</text>
+  <text x="1022" y="803" text-anchor="middle" class="small">EMA-based stabilization wrapped around norms</text>
+  <path d="M812 770C846 770 850 770 878 770" stroke="#6E9C43" stroke-width="4" marker-end="url(#arrowGreen)"/>
+
+  <rect x="878" y="836" width="252" height="92" rx="18" fill="url(#deferred)" stroke="#E48A55" stroke-width="2.5" stroke-dasharray="9 7"/>
+  <text x="920" y="892" class="deferredId">B5</text>
+  <text x="1022" y="890" text-anchor="middle" class="deferredText">RLGatingPolicy</text>
+  <text x="1022" y="915" text-anchor="middle" class="small">policy over block activation, deferred after Phase 2</text>
+
+  <text x="70" y="672" class="phaseText">MEMORY SIDE PATH</text>
+  <text x="70" y="698" class="copy">EpisodicMemory writes from hidden states and reads back before decoding.</text>
+  <text x="70" y="730" class="phaseText">EXPERIMENTAL DESIGN</text>
+  <text x="70" y="756" class="copy">Each block can be toggled independently, enabling clean ablations on a shared frozen backbone.</text>
+</svg>

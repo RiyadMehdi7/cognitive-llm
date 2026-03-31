@@ -1,16 +1,33 @@
 # Cognitive LLM
 
-Neuroscience-inspired architectural blocks for small language models. We augment a frozen [SmolLM-360M](https://huggingface.co/HuggingFaceTB/SmolLM-360M) backbone with six cognitive block families and run controlled ablation experiments to measure their individual and combined effects on reasoning performance.
+<p align="center">
+  Neuroscience-inspired architectural blocks for small language models.
+</p>
+
+<p align="center">
+  We augment a frozen <a href="https://huggingface.co/HuggingFaceTB/SmolLM-360M">SmolLM-360M</a> backbone with six toggleable cognitive modules and run controlled ablations to measure how each block changes reasoning performance.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+"/>
+  <img src="https://img.shields.io/badge/backbone-SmolLM--360M-5B8DEF" alt="Backbone SmolLM-360M"/>
+  <img src="https://img.shields.io/badge/focus-reasoning%20ablations-1B7F3B" alt="Reasoning ablations"/>
+  <img src="https://img.shields.io/badge/license-Apache%202.0-111827" alt="Apache 2.0"/>
+</p>
 
 **Paper:** [Memory Dominates Routing: A Controlled Screening of Neuroscience-Inspired Transformer Blocks](paper/main.pdf)
+
+| What this repo studies | Strongest result from Phase 1 | Why it matters |
+|---|---|---|
+| Six neuroscience-inspired plug-in blocks on top of a frozen transformer | `B1 + B2 + B6` reaches **2.718 val loss** vs **6.299** baseline | Isolates which ideas actually help reasoning, instead of bundling many changes together |
 
 ## Architecture
 
 <p align="center">
-  <img src="paper/figures/architecture_overview.png" width="720" alt="Cognitive LLM architecture: six neuroscience-inspired blocks augmenting a frozen transformer backbone"/>
+  <img src="assets/readme/architecture-overview.svg" width="980" alt="Clean overview of the Cognitive LLM architecture with the frozen transformer backbone in the center and six toggleable cognitive blocks arranged around it"/>
 </p>
 
-Six plug-in blocks wrap or augment a frozen transformer backbone. Each block is independently toggleable for clean ablation:
+Six plug-in blocks wrap or augment a frozen transformer backbone. Each block is independently toggleable so the architecture stays interpretable during ablation runs.
 
 | Block | Name | Inspiration | Role |
 |:-----:|------|-------------|------|
