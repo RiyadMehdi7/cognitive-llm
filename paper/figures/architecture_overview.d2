@@ -1,0 +1,239 @@
+direction: down
+
+classes: {
+  frame: {
+    style: {
+      fill: transparent
+      stroke: transparent
+      shadow: false
+    }
+  }
+
+  phase1: {
+    style: {
+      fill: "#E6F3D2"
+      stroke: "#6E9C43"
+      stroke-width: 2
+      border-radius: 20
+      shadow: true
+      font-size: 22
+      bold: true
+    }
+  }
+
+  deferred: {
+    style: {
+      fill: "#FDE7DA"
+      stroke: "#D57B4A"
+      stroke-width: 2
+      stroke-dash: 6
+      border-radius: 20
+      shadow: true
+      font-size: 22
+      bold: true
+    }
+  }
+
+  core: {
+    style: {
+      fill: "#DDE9FF"
+      stroke: "#6C8FC9"
+      stroke-width: 2
+      border-radius: 18
+      shadow: true
+      font-size: 22
+      bold: true
+    }
+  }
+
+  neutral: {
+    style: {
+      fill: "#F6F8FB"
+      stroke: "#A8B4C4"
+      stroke-width: 2
+      border-radius: 18
+      shadow: true
+      font-size: 22
+      bold: true
+    }
+  }
+
+  stack: {
+    style: {
+      fill: "#EEF4FF"
+      stroke: "#6C8FC9"
+      stroke-width: 2
+      border-radius: 28
+      shadow: true
+      font-size: 24
+      bold: true
+    }
+  }
+
+  layer: {
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#B7C4D8"
+      stroke-width: 2
+      border-radius: 18
+      shadow: false
+      font-size: 20
+      bold: true
+    }
+  }
+}
+
+legend_row: {
+  label: ""
+  class: frame
+  direction: right
+
+  active: "Phase 1 active" {
+    class: phase1
+  }
+
+  deferred_key: "Deferred" {
+    class: deferred
+  }
+
+  core_key: "Core" {
+    class: core
+  }
+}
+
+pipeline: {
+  label: ""
+  class: frame
+  direction: down
+
+  input: "Input tokens" {
+    class: neutral
+  }
+
+  embeddings: "Token embeddings" {
+    class: core
+  }
+
+  b1: "B1 SurpriseGate\nPrediction-error gating" {
+    class: phase1
+  }
+
+  middle: {
+    label: ""
+    class: frame
+    direction: right
+
+    b2_write: "B2 EpisodicMemory\nWrite path, 64-slot memory bank" {
+      class: phase1
+    }
+
+    stack: "Transformer stack\n32 frozen decoder layers + LoRA adaptation" {
+      class: stack
+      direction: down
+
+      layer_n: "Layer N" {
+        class: layer
+      }
+
+      dots: "..." {
+        shape: text
+        style: {
+          font-size: 34
+          bold: true
+          fill: transparent
+          stroke: transparent
+          shadow: false
+        }
+      }
+
+      layer_1: "Layer 1" {
+        class: layer
+      }
+    }
+
+    side_blocks: {
+      label: ""
+      class: frame
+      direction: down
+
+      b3: "B3 PerLayerCritic\nEvery 4th layer" {
+        class: phase1
+      }
+
+      b4: "B4 PredictiveCoding\nDeferred to Phase 3" {
+        class: deferred
+      }
+
+      b6: "B6 HomeostaticNorm\nWraps all norms" {
+        class: phase1
+      }
+    }
+  }
+
+  footer: {
+    label: ""
+    class: frame
+    direction: right
+
+    decode: {
+      label: ""
+      class: frame
+      direction: down
+
+      b2_read: "B2 EpisodicMemory\nRead path before decoding" {
+        class: phase1
+      }
+
+      lm_head: "LM head" {
+        class: core
+      }
+    }
+
+    b5: "B5 RLGatingPolicy\nDeferred after stack" {
+      class: deferred
+    }
+  }
+}
+
+pipeline.input -> pipeline.embeddings
+pipeline.embeddings -> pipeline.b1
+pipeline.b1 -> pipeline.middle.stack
+pipeline.middle.stack -> pipeline.footer.decode.b2_read
+pipeline.footer.decode.b2_read -> pipeline.footer.decode.lm_head
+
+pipeline.b1 -> pipeline.middle.b2_write: {
+  style: {
+    stroke: "#6E9C43"
+    stroke-width: 2
+  }
+}
+
+pipeline.middle.stack.layer_n -> pipeline.middle.side_blocks.b3: {
+  style: {
+    stroke: "#6E9C43"
+    stroke-width: 2
+  }
+}
+
+pipeline.middle.stack.dots -> pipeline.middle.side_blocks.b4: {
+  style: {
+    stroke: "#D57B4A"
+    stroke-width: 2
+    stroke-dash: 6
+  }
+}
+
+pipeline.middle.stack.layer_1 -> pipeline.middle.side_blocks.b6: {
+  style: {
+    stroke: "#6E9C43"
+    stroke-width: 2
+  }
+}
+
+pipeline.footer.decode.b2_read -> pipeline.footer.b5: {
+  style: {
+    stroke: "#D57B4A"
+    stroke-width: 2
+    stroke-dash: 6
+  }
+}

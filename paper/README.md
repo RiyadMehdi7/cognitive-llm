@@ -16,6 +16,7 @@ Contents:
 Recommended workflow:
 
 ```bash
+# Requires D2 CLI and rsvg-convert on PATH for the architecture diagram.
 python3 paper/scripts/make_figures.py
 make -C paper figures
 make -C paper pdf
